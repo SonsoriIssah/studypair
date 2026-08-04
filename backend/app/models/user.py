@@ -17,4 +17,5 @@ class User(Base):
     full_name: Mapped[str] = mapped_column(String, nullable=False)
     phone_number: Mapped[str | None] = mapped_column(String, nullable=True)
     profile_completed: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    is_admin: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
