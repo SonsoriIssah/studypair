@@ -227,21 +227,38 @@ def delete_course(
             status_code=http_status.HTTP_404_NOT_FOUND, detail="Course not found"
         )
 
-    # match_requests.course_id has no ON DELETE rule, so a delete would fail at
-    # the database level. Refuse it with an explanation instead of a 500.
+    # Team decision: only PENDING (an open ask) or ACCEPTED (a real ongoing
+    # commitment — DECISIONS.md says accepted is permanent) block deletion.
+    # REJECTED/EXPIRED requests are inert history and shouldn't lock a course
+    # out of deletion forever, which is what counting every status did.
     referencing = db.scalar(
         select(func.count())
         .select_from(MatchRequest)
-        .where(MatchRequest.course_id == course_id)
+        .where(
+            MatchRequest.course_id == course_id,
+            MatchRequest.status.in_(
+                [MatchRequestStatus.PENDING, MatchRequestStatus.ACCEPTED]
+            ),
+        )
     )
     if referencing:
         raise HTTPException(
             status_code=http_status.HTTP_409_CONFLICT,
             detail=(
-                "This course has match requests against it and cannot be removed. "
-                "Reject any pending requests first."
+                "This course has a pending or accepted match request against it "
+                "and cannot be removed. Reject any pending requests first — "
+                "accepted bookings can't be removed at all."
             ),
         )
+
+    # The FK has no ON DELETE rule, so it blocks the delete regardless of
+    # status — only PENDING/ACCEPTED are excluded above, so anything left
+    # referencing this course is REJECTED/EXPIRED history. Purge it first so
+    # the delete below doesn't hit the DB constraint.
+    db.query(MatchRequest).filter(
+        MatchRequest.course_id == course_id,
+        MatchRequest.status.in_([MatchRequestStatus.REJECTED, MatchRequestStatus.EXPIRED]),
+    ).delete(synchronize_session=False)
 
     db.delete(course)
     db.commit()
@@ -293,21 +310,37 @@ def delete_availability_slot(
     if slot is None or slot.tutor_id != current_user.id:
         raise HTTPException(status_code=http_status.HTTP_404_NOT_FOUND, detail="Slot not found")
 
-    # Open edge case flagged in DANIEL_CONTRIBUTING.md: a match request points
-    # at this slot. The FK has no ON DELETE rule, and deleting a slot out from
-    # under an accepted booking would silently break that arrangement, so this
-    # refuses. Needs a team decision — see the PR description.
+    # Team decision: same rule as delete_course above — only an active ask
+    # (PENDING) or a real ongoing commitment (ACCEPTED, permanent per
+    # DECISIONS.md) blocks deletion. Resolved history (REJECTED/EXPIRED)
+    # doesn't.
     referencing = db.scalar(
-        select(func.count()).select_from(MatchRequest).where(MatchRequest.slot_id == slot_id)
+        select(func.count())
+        .select_from(MatchRequest)
+        .where(
+            MatchRequest.slot_id == slot_id,
+            MatchRequest.status.in_(
+                [MatchRequestStatus.PENDING, MatchRequestStatus.ACCEPTED]
+            ),
+        )
     )
     if referencing:
         raise HTTPException(
             status_code=http_status.HTTP_409_CONFLICT,
             detail=(
-                "This slot has match requests against it and cannot be removed. "
-                "Reject any pending requests first."
+                "This slot has a pending or accepted match request against it "
+                "and cannot be removed. Reject any pending requests first — "
+                "accepted bookings can't be removed at all."
             ),
         )
+
+    # Same reasoning as delete_course: the FK has no ON DELETE rule, so purge
+    # the inert REJECTED/EXPIRED rows first — anything PENDING/ACCEPTED was
+    # already blocked above.
+    db.query(MatchRequest).filter(
+        MatchRequest.slot_id == slot_id,
+        MatchRequest.status.in_([MatchRequestStatus.REJECTED, MatchRequestStatus.EXPIRED]),
+    ).delete(synchronize_session=False)
 
     db.delete(slot)
     db.commit()
