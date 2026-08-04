@@ -13,6 +13,7 @@ class CourseApplicationStatus(str, enum.Enum):
     OPEN = "open"
     FULFILLED = "fulfilled"
     EXPIRED = "expired"
+    WITHDRAWN = "withdrawn"
 
 
 def _default_expires_at() -> datetime:

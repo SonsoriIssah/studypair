@@ -14,6 +14,7 @@ class MatchRequestStatus(str, enum.Enum):
     ACCEPTED = "accepted"
     REJECTED = "rejected"
     EXPIRED = "expired"
+    CANCELLED = "cancelled"
 
 
 class MatchRequest(Base):

@@ -6,6 +6,7 @@ from datetime import datetime
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from app.models.course_application import CourseApplicationStatus
+from app.models.match_request import MatchRequestStatus
 from app.schemas.common import CourseRead, SlotRead
 
 
@@ -25,6 +26,30 @@ class TutorBrowseItem(BaseModel):
 class MatchRequestCreate(BaseModel):
     course_id: uuid.UUID
     slot_id: uuid.UUID
+
+
+class RequestedTutor(BaseModel):
+    """The tutor behind an outgoing request — the mirror of tutors.py's
+    RequestingStudent."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    full_name: str
+    email: str
+
+
+class OutgoingMatchRequest(BaseModel):
+    """A request this student made, from their side — mirrors tutors.py's
+    IncomingMatchRequest but shows the tutor instead of the student."""
+
+    id: uuid.UUID
+    status: MatchRequestStatus
+    created_at: datetime
+    responded_at: datetime | None
+    tutor: RequestedTutor
+    course: CourseRead
+    slot: SlotRead
 
 
 class CourseApplicationCreate(BaseModel):

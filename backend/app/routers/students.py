@@ -1,5 +1,6 @@
 """Student dashboard: browsing tutors, requesting slots, applying for courses."""
 
+import uuid
 from collections import defaultdict
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -25,11 +26,20 @@ from app.schemas.students import (
     CourseApplicationRead,
     MatchRequestCreate,
     NotificationRead,
+    OutgoingMatchRequest,
+    RequestedTutor,
     TutorBrowseItem,
 )
+from app.schemas.tutors import MatchRequestStatusFilter
 from app.services.admins import get_admin_users
 from app.services.course_names import name_matches
-from app.services.expiry import expire_due_course_applications, expire_due_match_requests
+from app.services.expiry import (
+    expire_due_course_applications,
+    expire_due_match_requests,
+    expire_match_request,
+    utcnow,
+)
+from app.services.slots import release_slot
 
 router = APIRouter(prefix="/students", tags=["students"])
 
@@ -156,6 +166,90 @@ def create_match_request(
     return request
 
 
+def _load_own_outgoing_request(
+    db: Session, request_id: uuid.UUID, student_id: uuid.UUID
+) -> MatchRequest:
+    """Fetch a request this student made, or 404.
+
+    Mirrors tutors.py's _load_own_request: someone else's request is reported
+    as missing rather than forbidden.
+    """
+    request = db.get(MatchRequest, request_id)
+    if request is None or request.student_id != student_id:
+        raise HTTPException(
+            status_code=http_status.HTTP_404_NOT_FOUND, detail="Match request not found"
+        )
+    return request
+
+
+@router.get("/me/requests", response_model=list[OutgoingMatchRequest])
+def list_my_requests(
+    status: MatchRequestStatusFilter = Query(
+        MatchRequestStatusFilter.ALL,
+        description="Filter by status. Defaults to `all` — unlike the tutor "
+        "view, a student cares about pending and accepted alike.",
+    ),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> list[OutgoingMatchRequest]:
+    """Requests this student has made, newest first."""
+    expire_due_match_requests(db, student_id=current_user.id)
+
+    stmt = (
+        select(MatchRequest, User, TutorCourse, TutorAvailabilitySlot)
+        .join(User, User.id == MatchRequest.tutor_id)
+        .join(TutorCourse, TutorCourse.id == MatchRequest.course_id)
+        .join(TutorAvailabilitySlot, TutorAvailabilitySlot.id == MatchRequest.slot_id)
+        .where(MatchRequest.student_id == current_user.id)
+        .order_by(MatchRequest.created_at.desc())
+    )
+    if status is not MatchRequestStatusFilter.ALL:
+        stmt = stmt.where(MatchRequest.status == MatchRequestStatus(status.value))
+
+    return [
+        OutgoingMatchRequest(
+            id=request.id,
+            status=request.status,
+            created_at=request.created_at,
+            responded_at=request.responded_at,
+            tutor=RequestedTutor.model_validate(tutor),
+            course=CourseRead.model_validate(course),
+            slot=SlotRead.model_validate(slot),
+        )
+        for request, tutor, course, slot in db.execute(stmt).all()
+    ]
+
+
+@router.post("/me/requests/{request_id}/cancel", response_model=MatchRequestRead)
+def cancel_request(
+    request_id: uuid.UUID,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> MatchRequest:
+    """Withdraw a request before the tutor has acted on it.
+
+    Only valid from PENDING — DECISIONS.md says ACCEPTED is permanent, so a
+    student can't back out of one that way.
+    """
+    request = _load_own_outgoing_request(db, request_id, current_user.id)
+    if expire_match_request(db, request):
+        db.commit()
+
+    if request.status != MatchRequestStatus.PENDING:
+        raise HTTPException(
+            status_code=http_status.HTTP_409_CONFLICT,
+            detail=f"Request is already {request.status.value}",
+        )
+
+    request.status = MatchRequestStatus.CANCELLED
+    request.responded_at = utcnow()
+    release_slot(db, request.slot_id)
+
+    db.commit()
+    db.refresh(request)
+    return request
+
+
 @router.post(
     "/course-applications",
     response_model=CourseApplicationRead,
@@ -201,9 +295,8 @@ def create_course_application(
     application = CourseApplication(student_id=current_user.id, course_name=course_name)
     db.add(application)
 
-    # DECISIONS.md: admin is notified in-app. See services/admins.py — with no
-    # admin column in the schema yet, this is an env-var allowlist and is a
-    # no-op when unset.
+    # DECISIONS.md: admin is notified in-app. See services/admins.py — reads
+    # users.is_admin; a no-op if nobody is flagged admin yet.
     for admin in get_admin_users(db):
         db.add(
             Notification(
@@ -220,6 +313,57 @@ def create_course_application(
     return application
 
 
+@router.get("/me/course-applications", response_model=list[CourseApplicationRead])
+def list_my_course_applications(
+    status: CourseApplicationStatus | None = Query(default=None),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> list[CourseApplication]:
+    """This student's own course applications, newest first."""
+    expire_due_course_applications(db, student_id=current_user.id)
+
+    stmt = select(CourseApplication).where(CourseApplication.student_id == current_user.id)
+    if status is not None:
+        stmt = stmt.where(CourseApplication.status == status)
+
+    return list(db.scalars(stmt.order_by(CourseApplication.created_at.desc())).all())
+
+
+@router.post(
+    "/me/course-applications/{application_id}/withdraw", response_model=CourseApplicationRead
+)
+def withdraw_course_application(
+    application_id: uuid.UUID,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> CourseApplication:
+    """Withdraw an application before it's fulfilled or expires.
+
+    Only valid from OPEN — once FULFILLED a tutor has already been notified,
+    and EXPIRED is already final.
+    """
+    # Sweep first: an application overdue for expiry but not yet marked as
+    # such shouldn't be withdrawable as if it were still live.
+    expire_due_course_applications(db, student_id=current_user.id)
+
+    application = db.get(CourseApplication, application_id)
+    if application is None or application.student_id != current_user.id:
+        raise HTTPException(
+            status_code=http_status.HTTP_404_NOT_FOUND, detail="Course application not found"
+        )
+
+    if application.status != CourseApplicationStatus.OPEN:
+        raise HTTPException(
+            status_code=http_status.HTTP_409_CONFLICT,
+            detail=f"Application is already {application.status.value}",
+        )
+
+    application.status = CourseApplicationStatus.WITHDRAWN
+    db.commit()
+    db.refresh(application)
+    return application
+
+
 @router.get("/me/notifications", response_model=list[NotificationRead])
 def list_notifications(
     unread_only: bool = Query(default=False, description="Return only unread notifications."),
@@ -231,3 +375,21 @@ def list_notifications(
     if unread_only:
         stmt = stmt.where(Notification.read.is_(False))
     return list(db.scalars(stmt.order_by(Notification.created_at.desc())).all())
+
+
+@router.patch("/me/notifications/{notification_id}/read", response_model=NotificationRead)
+def mark_notification_read(
+    notification_id: uuid.UUID,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> Notification:
+    notification = db.get(Notification, notification_id)
+    if notification is None or notification.user_id != current_user.id:
+        raise HTTPException(
+            status_code=http_status.HTTP_404_NOT_FOUND, detail="Notification not found"
+        )
+
+    notification.read = True
+    db.commit()
+    db.refresh(notification)
+    return notification
