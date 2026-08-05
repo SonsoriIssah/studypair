@@ -73,6 +73,7 @@ def complete_profile(
     db: Session = Depends(get_db),
 ) -> User:
     current_user.phone_number = payload.phone_number
+    current_user.level = payload.level
     current_user.profile_completed = True
     db.commit()
     db.refresh(current_user)
