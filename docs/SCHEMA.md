@@ -13,6 +13,7 @@ A person using StudyPair. A single user can act as both a student and a tutor.
 | email | string | Unique, not null |
 | full_name | string | Not null |
 | phone_number | string | Nullable, contact info only, never SMS-verified |
+| level | integer | Nullable — 100/200/300/400, set at profile completion |
 | profile_completed | boolean | Default false |
 | created_at | datetime | Default now |
 
@@ -25,6 +26,11 @@ A course/subject a tutor has listed themselves as able to teach. Free text, no f
 | id | UUID | Primary key |
 | tutor_id | UUID | FK -> users.id |
 | course_name | string | Not null, free text |
+| level | integer | Not null — the level this listing is taught at |
+
+The same subject at two levels is two rows. A listing is visible only to
+students whose own level matches, so the duplicate check is on name **and**
+level.
 
 ## tutor_availability_slots
 
@@ -37,7 +43,15 @@ A recurring weekly time block during which a tutor is available. Not tied to a s
 | day_of_week | enum | Mon-Sun |
 | start_time | time | |
 | end_time | time | |
-| is_booked | boolean | Default false |
+| max_students | integer | Default 1 — 1 is one-on-one, above 1 is a group session |
+| current_students | integer | Default 0 — seats currently held |
+
+`is_booked` is gone. "Full" is `current_students >= max_students`. A seat is
+taken when a student requests the slot and released on reject, expiry or
+cancel. Requests against a slot with `max_students > 1` are accepted
+immediately while seats remain, and refused once full — there is no waitlist.
+`app/services/slots.py` owns every change to `current_students` and takes a
+row lock so the capacity check and the increment are atomic.
 
 ## match_requests
 

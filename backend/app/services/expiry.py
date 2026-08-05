@@ -8,6 +8,10 @@ Windows:
 - match request: 48 hours from `created_at` without a tutor response
 - course application: `expires_at`, which the model defaults to `created_at` + 2 days
 
+Only PENDING requests can expire. Under FEATURE.md a bulk request is accepted
+the moment it's made, so in practice expiry only ever touches one-on-one slots
+— but the seat is released either way.
+
 Timestamps are naive UTC to match the models (`datetime.utcnow`). If the team
 moves the models to timezone-aware datetimes, `utcnow()` below moves with them.
 """
@@ -21,7 +25,7 @@ from sqlalchemy.orm import Session
 from app.models import CourseApplication, MatchRequest
 from app.models.course_application import CourseApplicationStatus
 from app.models.match_request import MatchRequestStatus
-from app.services.slots import release_slot
+from app.services.slots import release_seat_by_id
 
 MATCH_REQUEST_TTL = timedelta(hours=48)
 
@@ -34,8 +38,8 @@ def utcnow() -> datetime:
 def expire_match_request(db: Session, request: MatchRequest, now: datetime | None = None) -> bool:
     """Expire one request if its 48 hours are up. Returns True if it changed.
 
-    SCHEMA.md: an expired request frees its slot. `responded_at` stays null —
-    the tutor never responded, which is the whole point.
+    An expired request hands its seat back. `responded_at` stays null — the
+    tutor never responded, which is the whole point.
 
     Does not commit; the caller owns the transaction.
     """
@@ -45,7 +49,7 @@ def expire_match_request(db: Session, request: MatchRequest, now: datetime | Non
         return False
 
     request.status = MatchRequestStatus.EXPIRED
-    release_slot(db, request.slot_id)
+    release_seat_by_id(db, request.slot_id)
     return True
 
 
@@ -55,11 +59,11 @@ def expire_due_match_requests(
     tutor_id: uuid.UUID | None = None,
     student_id: uuid.UUID | None = None,
 ) -> int:
-    """Expire every pending request past its window, freeing each slot.
+    """Expire every pending request past its window, freeing each seat.
 
     Narrow with `tutor_id`/`student_id` when the caller only cares about one
     person's rows; pass neither to sweep the table (used by tutor browsing,
-    where any tutor's stale lock would otherwise hide an available slot).
+    where any tutor's stale seat would otherwise hide an available slot).
 
     Commits if anything changed. Returns the number of requests expired.
     """
@@ -73,12 +77,13 @@ def expire_due_match_requests(
     if student_id is not None:
         stmt = stmt.where(MatchRequest.student_id == student_id)
 
-    # Materialise before mutating: release_slot() issues its own queries, and
-    # iterating a live result while doing so is unsafe under server-side cursors.
+    # Materialise before mutating: release_seat_by_id() issues its own locking
+    # query, and iterating a live result while doing so is unsafe under
+    # server-side cursors.
     expired = 0
     for request in db.scalars(stmt).all():
         request.status = MatchRequestStatus.EXPIRED
-        release_slot(db, request.slot_id)
+        release_seat_by_id(db, request.slot_id)
         expired += 1
 
     if expired:

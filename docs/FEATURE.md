@@ -44,12 +44,15 @@ tutor_courses
 - **Student's own level** — captured during `POST /auth/complete-profile`
   (existing endpoint), alongside phone number.
 
-### Open question — needs an answer before building
+### Open question — RESOLVED (Daniel, browse endpoint author)
 
 - **What happens if a student's `level` isn't set yet** when they hit the
-  browse endpoint? Options: block browsing until profile is complete, or
-  show nothing until level is set, or show everything (defeats the point of
-  the feature). Pick one and note it here once decided.
+  browse endpoint? **Decided: block.** Browsing and booking return `409` with
+  "Set your level in your profile before browsing or booking" until
+  `users.level` is set. Showing nothing was rejected because an empty list is
+  indistinguishable from "no tutors exist" and sends students hunting for a
+  bug; showing everything defeats the feature. Implemented as `_require_level`
+  in `students.py`.
 
 ---
 
@@ -141,8 +144,8 @@ double-booking bug the original lock was built to prevent.
 
 ## Still open — resolve together before writing code
 
-1. Student browsing with no `level` set yet — what do they see? **Still
-   open** — this is Daniel's territory (browse endpoint), not decided here.
+1. Student browsing with no `level` set yet — what do they see? **Resolved
+   above (Daniel):** blocked with a 409 until the profile sets a level.
 2. Migration strategy for existing `is_booked` demo data — migrate or wipe?
    **Resolved (Sonsori, migration author):** migrate, not wipe. Every
    existing row was implicitly 1-on-1 under the old model, so the mapping is

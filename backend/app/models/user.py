@@ -16,9 +16,9 @@ class User(Base):
     email: Mapped[str] = mapped_column(String, unique=True, nullable=False)
     full_name: Mapped[str] = mapped_column(String, nullable=False)
     phone_number: Mapped[str | None] = mapped_column(String, nullable=True)
-    # Nullable: unset until POST /auth/complete-profile. FEATURE.md's open
-    # question ("what does browsing show with no level set?") is Daniel's
-    # call on the browse endpoint — this column just has to allow the state.
+    # Nullable: unset until POST /auth/complete-profile. Resolved in
+    # FEATURE.md: the browse/booking endpoints in students.py block with a
+    # 409 while this is null, rather than showing an empty or unfiltered list.
     level: Mapped[int | None] = mapped_column(Integer, nullable=True)
     profile_completed: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     is_admin: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)

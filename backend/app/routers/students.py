@@ -39,7 +39,7 @@ from app.services.expiry import (
     expire_match_request,
     utcnow,
 )
-from app.services.slots import release_slot
+from app.services.slots import is_bulk, lock_slot, release_seat_by_id, take_seat
 
 router = APIRouter(prefix="/students", tags=["students"])
 
@@ -47,6 +47,42 @@ router = APIRouter(prefix="/students", tags=["students"])
 @router.get("/health")
 def health():
     return {"status": "ok"}
+
+
+def _require_level(user: User) -> int:
+    """Every student-side action is scoped to a level, so it must be set.
+
+    Answers FEATURE.md's first open question: browsing is *blocked* until the
+    level is known, rather than showing nothing or showing everything. Showing
+    nothing is indistinguishable from "no tutors exist" and sends students
+    looking for a bug; showing everything defeats the feature. A 409 tells them
+    exactly what to do next.
+
+    `users.level` is set during profile completion, which is the auth module's
+    job — see the note in the PR.
+    """
+    if user.level is None:
+        raise HTTPException(
+            status_code=http_status.HTTP_409_CONFLICT,
+            detail="Set your level in your profile before browsing or booking",
+        )
+    return user.level
+
+
+def _load_own_outgoing_request(
+    db: Session, request_id: uuid.UUID, student_id: uuid.UUID
+) -> MatchRequest:
+    """Fetch a request this student made, or 404.
+
+    Mirrors tutors.py's _load_own_request: someone else's request is reported
+    as missing rather than forbidden.
+    """
+    request = db.get(MatchRequest, request_id)
+    if request is None or request.student_id != student_id:
+        raise HTTPException(
+            status_code=http_status.HTTP_404_NOT_FOUND, detail="Match request not found"
+        )
+    return request
 
 
 @router.get("/tutors", response_model=list[TutorBrowseItem])
@@ -58,19 +94,23 @@ def browse_tutors(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> list[TutorBrowseItem]:
-    """Browse tutors with their courses and un-booked slots.
+    """Browse course listings at your own level, with the tutor's open slots.
 
-    Sweeps expired requests table-wide first: a lapsed lock from any tutor would
-    otherwise keep a slot hidden that should be bookable again.
+    A listing at another level is absent entirely, not greyed out — the level
+    filter is applied in the query.
 
-    A tutor with no free slots is still listed, so a student can see the course
-    is taught even when nothing is open right now.
+    Sweeps expired requests table-wide first: a lapsed seat from any tutor
+    would otherwise stay hidden when it should be bookable again.
     """
+    level = _require_level(current_user)
     expire_due_match_requests(db)
 
     # A user is a tutor precisely when they have rows in tutor_courses
     # (DECISIONS.md — no separate role flag). Exclude self: you can't book you.
-    course_stmt = select(TutorCourse).where(TutorCourse.tutor_id != current_user.id)
+    course_stmt = select(TutorCourse).where(
+        TutorCourse.tutor_id != current_user.id,
+        TutorCourse.level == level,
+    )
     if course:
         course_stmt = course_stmt.where(TutorCourse.course_name.ilike(f"%{course.strip()}%"))
     courses = db.scalars(course_stmt).all()
@@ -81,11 +121,13 @@ def browse_tutors(
     tutors = db.scalars(
         select(User).where(User.id.in_(tutor_ids)).order_by(User.full_name)
     ).all()
+    # "Not full" replaces the old is_booked check. A bulk slot stays listed
+    # while it still has seats.
     slots = db.scalars(
         select(TutorAvailabilitySlot)
         .where(
             TutorAvailabilitySlot.tutor_id.in_(tutor_ids),
-            TutorAvailabilitySlot.is_booked.is_(False),
+            TutorAvailabilitySlot.current_students < TutorAvailabilitySlot.max_students,
         )
         .order_by(TutorAvailabilitySlot.day_of_week, TutorAvailabilitySlot.start_time)
     ).all()
@@ -117,12 +159,21 @@ def create_match_request(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> MatchRequest:
-    """Request a specific course at one of the tutor's existing slots.
+    """Take a seat in one of a tutor's slots.
 
-    SCHEMA.md: the slot locks immediately on request, not on acceptance, so two
-    students can't hold the same slot. The 48-hour expiry frees it if the tutor
+    One-on-one (`max_students == 1`): the request sits `pending` and the tutor
+    accepts or rejects it, exactly as before. The seat is held meanwhile, so
+    nobody else can take the slot, and the 48-hour expiry frees it if the tutor
     never replies.
+
+    Bulk (`max_students > 1`): the request is `accepted` immediately while
+    seats remain, and refused outright once full — there is no waitlist.
+
+    The slot row is locked before the capacity check, so the check and the
+    increment are a single atomic step and two students racing for the last
+    seat cannot both win.
     """
+    level = _require_level(current_user)
     expire_due_match_requests(db)
 
     course = db.get(TutorCourse, payload.course_id)
@@ -130,9 +181,13 @@ def create_match_request(
         raise HTTPException(
             status_code=http_status.HTTP_404_NOT_FOUND, detail="Course not found"
         )
+    if course.level != level:
+        raise HTTPException(
+            status_code=http_status.HTTP_403_FORBIDDEN,
+            detail="That course is taught at a different level",
+        )
 
-    # Row lock so two students racing for the last slot can't both win.
-    slot = db.get(TutorAvailabilitySlot, payload.slot_id, with_for_update=True)
+    slot = lock_slot(db, payload.slot_id)
     if slot is None:
         raise HTTPException(status_code=http_status.HTTP_404_NOT_FOUND, detail="Slot not found")
 
@@ -146,39 +201,41 @@ def create_match_request(
             status_code=http_status.HTTP_400_BAD_REQUEST,
             detail="You cannot book yourself as a tutor",
         )
-    if slot.is_booked:
+
+    already_in_slot = db.scalar(
+        select(MatchRequest).where(
+            MatchRequest.slot_id == slot.id,
+            MatchRequest.student_id == current_user.id,
+            MatchRequest.status.in_(
+                (MatchRequestStatus.PENDING, MatchRequestStatus.ACCEPTED)
+            ),
+        )
+    )
+    if already_in_slot is not None:
         raise HTTPException(
             status_code=http_status.HTTP_409_CONFLICT,
-            detail="That slot has already been taken",
+            detail="You already have a seat in that slot",
         )
 
+    if not take_seat(slot):
+        raise HTTPException(
+            status_code=http_status.HTTP_409_CONFLICT,
+            detail="That slot is full",
+        )
+
+    bulk = is_bulk(slot)
     request = MatchRequest(
         student_id=current_user.id,
         tutor_id=course.tutor_id,
         course_id=course.id,
         slot_id=slot.id,
-        status=MatchRequestStatus.PENDING,
+        status=MatchRequestStatus.ACCEPTED if bulk else MatchRequestStatus.PENDING,
+        responded_at=utcnow() if bulk else None,
     )
-    slot.is_booked = True
     db.add(request)
+
     db.commit()
     db.refresh(request)
-    return request
-
-
-def _load_own_outgoing_request(
-    db: Session, request_id: uuid.UUID, student_id: uuid.UUID
-) -> MatchRequest:
-    """Fetch a request this student made, or 404.
-
-    Mirrors tutors.py's _load_own_request: someone else's request is reported
-    as missing rather than forbidden.
-    """
-    request = db.get(MatchRequest, request_id)
-    if request is None or request.student_id != student_id:
-        raise HTTPException(
-            status_code=http_status.HTTP_404_NOT_FOUND, detail="Match request not found"
-        )
     return request
 
 
@@ -229,7 +286,9 @@ def cancel_request(
     """Withdraw a request before the tutor has acted on it.
 
     Only valid from PENDING — DECISIONS.md says ACCEPTED is permanent, so a
-    student can't back out of one that way.
+    student can't back out of one that way. Note this means a bulk booking,
+    which is accepted on creation, can't be cancelled by the student; raised
+    in the PR as a question for the team.
     """
     request = _load_own_outgoing_request(db, request_id, current_user.id)
     if expire_match_request(db, request):
@@ -243,7 +302,7 @@ def cancel_request(
 
     request.status = MatchRequestStatus.CANCELLED
     request.responded_at = utcnow()
-    release_slot(db, request.slot_id)
+    release_seat_by_id(db, request.slot_id)
 
     db.commit()
     db.refresh(request)
@@ -265,18 +324,19 @@ def create_course_application(
     expire_due_course_applications(db, student_id=current_user.id)
 
     # An application is for unmet demand, so refuse it if the course is already
-    # taught. Matched case-insensitively on the whole name, the same rule
-    # add_course uses to fulfil applications.
+    # taught at this student's level — a listing at another level is invisible
+    # to them and so doesn't count as met demand.
     existing_tutor_course = db.scalar(
         select(TutorCourse).where(
             TutorCourse.tutor_id != current_user.id,
+            TutorCourse.level == _require_level(current_user),
             name_matches(TutorCourse.course_name, course_name),
         )
     )
     if existing_tutor_course is not None:
         raise HTTPException(
             status_code=http_status.HTTP_409_CONFLICT,
-            detail="A tutor already teaches this course — browse tutors to book a slot",
+            detail="A tutor already teaches this course at your level — browse to book a slot",
         )
 
     duplicate = db.scalar(
@@ -295,7 +355,7 @@ def create_course_application(
     application = CourseApplication(student_id=current_user.id, course_name=course_name)
     db.add(application)
 
-    # DECISIONS.md: admin is notified in-app. See services/admins.py — reads
+    # DECISIONS.md: admin is notified in-app. services/admins.py reads
     # users.is_admin; a no-op if nobody is flagged admin yet.
     for admin in get_admin_users(db):
         db.add(

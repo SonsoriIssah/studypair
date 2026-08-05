@@ -32,7 +32,6 @@ class TutorAvailabilitySlot(Base):
     # higher is a bulk/group session. "Full" is computed:
     # current_students >= max_students. Checking and incrementing this must
     # happen as one atomic, row-locked operation on the request path — see
-    # FEATURE.md's concurrency section. That locking code is Daniel's, not
-    # added here; this is the schema layer only.
+    # app/services/slots.py, which owns every change to current_students.
     max_students: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
     current_students: Mapped[int] = mapped_column(Integer, nullable=False, default=0)

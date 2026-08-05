@@ -13,6 +13,9 @@ from app.schemas.common import CourseRead, SlotRead
 class TutorBrowseItem(BaseModel):
     """A tutor as seen from the browse screen.
 
+    Only courses at the requesting student's own level appear here, so a
+    listing at another level is absent rather than greyed out.
+
     Contact details (email, phone) are deliberately left out — a student
     hasn't been matched with this tutor yet.
     """

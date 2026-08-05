@@ -35,7 +35,7 @@ from app.services.expiry import (
     expire_match_request,
     utcnow,
 )
-from app.services.slots import release_slot
+from app.services.slots import is_bulk, lock_slot, release_seat
 
 router = APIRouter(prefix="/tutors", tags=["tutors"])
 
@@ -68,7 +68,12 @@ def list_incoming_requests(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> list[IncomingMatchRequest]:
-    """Requests students have sent to this tutor, newest first."""
+    """Requests students have sent to this tutor, newest first.
+
+    Note that bulk-slot requests arrive already `accepted`, so a tutor
+    reviewing only the default `pending` filter won't see them — they show up
+    under `accepted` or `all`.
+    """
     expire_due_match_requests(db, tutor_id=current_user.id)
 
     stmt = (
@@ -102,7 +107,12 @@ def accept_request(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> MatchRequest:
-    """Accept a request. Final state — the slot stays booked permanently."""
+    """Accept a pending request.
+
+    Only one-on-one requests ever reach here — a bulk request is accepted at
+    creation time. The seat was already claimed when the student requested it,
+    so the count doesn't move.
+    """
     request = _load_own_request(db, request_id, current_user.id)
     if expire_match_request(db, request):
         db.commit()
@@ -116,13 +126,6 @@ def accept_request(
     request.status = MatchRequestStatus.ACCEPTED
     request.responded_at = utcnow()
 
-    # SCHEMA.md: the slot was locked when the student requested it and stays
-    # locked forever once accepted, since a booking is an ongoing weekly
-    # arrangement. Set it defensively in case the lock was lost.
-    slot = db.get(TutorAvailabilitySlot, request.slot_id)
-    if slot is not None:
-        slot.is_booked = True
-
     db.commit()
     db.refresh(request)
     return request
@@ -134,12 +137,24 @@ def reject_request(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> MatchRequest:
-    """Reject a request and free the slot for other students."""
+    """Reject a request, freeing its seat for another student.
+
+    FEATURE.md allows rejecting an *accepted* request when the slot is bulk,
+    since those were auto-accepted and the tutor never got a say. For a
+    one-on-one slot, accepted stays final per DECISIONS.md.
+    """
     request = _load_own_request(db, request_id, current_user.id)
     if expire_match_request(db, request):
         db.commit()
 
-    if request.status != MatchRequestStatus.PENDING:
+    # Lock before touching the count, same rule as claiming a seat.
+    slot = lock_slot(db, request.slot_id)
+    bulk = slot is not None and is_bulk(slot)
+
+    rejectable = request.status is MatchRequestStatus.PENDING or (
+        request.status is MatchRequestStatus.ACCEPTED and bulk
+    )
+    if not rejectable:
         raise HTTPException(
             status_code=http_status.HTTP_409_CONFLICT,
             detail=f"Request is already {request.status.value}",
@@ -147,7 +162,8 @@ def reject_request(
 
     request.status = MatchRequestStatus.REJECTED
     request.responded_at = utcnow()
-    release_slot(db, request.slot_id)
+    if slot is not None:
+        release_seat(slot)
 
     db.commit()
     db.refresh(request)
@@ -162,28 +178,37 @@ def add_course(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> CourseAddResult:
-    """List a course this tutor can teach, fulfilling any open applications for it."""
+    """List a course this tutor can teach, at a given level.
+
+    The same subject at two levels is two listings, each visible only to
+    students at that level — so the duplicate check is on name *and* level.
+    Without the level in the comparison, "Calculus I" at 100 and at 200 would
+    collide as a duplicate.
+    """
     course_name = payload.course_name
     duplicate = db.scalar(
         select(TutorCourse).where(
             TutorCourse.tutor_id == current_user.id,
+            TutorCourse.level == payload.level,
             name_matches(TutorCourse.course_name, course_name),
         )
     )
     if duplicate is not None:
         raise HTTPException(
             status_code=http_status.HTTP_409_CONFLICT,
-            detail="You already teach this course",
+            detail="You already teach this course at that level",
         )
 
-    course = TutorCourse(tutor_id=current_user.id, course_name=course_name)
+    course = TutorCourse(
+        tutor_id=current_user.id, course_name=course_name, level=payload.level
+    )
     db.add(course)
 
     # Lapse stale applications first so a 3-day-old one isn't marked fulfilled.
     expire_due_course_applications(db)
 
-    # Free-text matching rule lives in services/course_names.py so that this and
-    # the student-side application check can never drift apart.
+    # NOTE: course_applications has no level column in the agreed schema, so a
+    # course at any level fulfils a matching application. Raised in the PR.
     applications = db.scalars(
         select(CourseApplication).where(
             CourseApplication.status == CourseApplicationStatus.OPEN,
@@ -199,8 +224,8 @@ def add_course(
             Notification(
                 user_id=application.student_id,
                 message=(
-                    f'A tutor is now available for "{course_name}". '
-                    "Browse tutors to pick a time slot."
+                    f'A tutor is now available for "{course_name}" at level '
+                    f"{payload.level}. Browse tutors to pick a time slot."
                 ),
             )
         )
@@ -246,19 +271,9 @@ def delete_course(
             status_code=http_status.HTTP_409_CONFLICT,
             detail=(
                 "This course has a pending or accepted match request against it "
-                "and cannot be removed. Reject any pending requests first — "
-                "accepted bookings can't be removed at all."
+                "and cannot be removed. Reject those requests first."
             ),
         )
-
-    # The FK has no ON DELETE rule, so it blocks the delete regardless of
-    # status — only PENDING/ACCEPTED are excluded above, so anything left
-    # referencing this course is REJECTED/EXPIRED history. Purge it first so
-    # the delete below doesn't hit the DB constraint.
-    db.query(MatchRequest).filter(
-        MatchRequest.course_id == course_id,
-        MatchRequest.status.in_([MatchRequestStatus.REJECTED, MatchRequestStatus.EXPIRED]),
-    ).delete(synchronize_session=False)
 
     db.delete(course)
     db.commit()
@@ -272,7 +287,12 @@ def add_availability_slot(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> TutorAvailabilitySlot:
-    """Add a recurring weekly slot. Not tied to a calendar date."""
+    """Add a recurring weekly slot.
+
+    `max_students=1` is one-on-one: a student's request sits pending until you
+    respond. Above 1 makes it a group session, where requests are accepted
+    automatically until the seats run out.
+    """
     overlapping = db.scalar(
         select(TutorAvailabilitySlot).where(
             TutorAvailabilitySlot.tutor_id == current_user.id,
@@ -292,6 +312,8 @@ def add_availability_slot(
         day_of_week=payload.day_of_week,
         start_time=payload.start_time,
         end_time=payload.end_time,
+        max_students=payload.max_students,
+        current_students=0,
     )
     db.add(slot)
     db.commit()
@@ -329,18 +351,9 @@ def delete_availability_slot(
             status_code=http_status.HTTP_409_CONFLICT,
             detail=(
                 "This slot has a pending or accepted match request against it "
-                "and cannot be removed. Reject any pending requests first — "
-                "accepted bookings can't be removed at all."
+                "and cannot be removed. Reject those requests first."
             ),
         )
-
-    # Same reasoning as delete_course: the FK has no ON DELETE rule, so purge
-    # the inert REJECTED/EXPIRED rows first — anything PENDING/ACCEPTED was
-    # already blocked above.
-    db.query(MatchRequest).filter(
-        MatchRequest.slot_id == slot_id,
-        MatchRequest.status.in_([MatchRequestStatus.REJECTED, MatchRequestStatus.EXPIRED]),
-    ).delete(synchronize_session=False)
 
     db.delete(slot)
     db.commit()
