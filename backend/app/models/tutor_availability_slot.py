@@ -2,7 +2,7 @@ import enum
 import uuid
 from datetime import time
 
-from sqlalchemy import Boolean, Enum, ForeignKey, Time
+from sqlalchemy import Enum, ForeignKey, Integer, Time
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -27,4 +27,9 @@ class TutorAvailabilitySlot(Base):
     day_of_week: Mapped[DayOfWeek] = mapped_column(Enum(DayOfWeek, name="day_of_week"), nullable=False)
     start_time: Mapped[time] = mapped_column(Time, nullable=False)
     end_time: Mapped[time] = mapped_column(Time, nullable=False)
-    is_booked: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    # FEATURE.md: capacity replaces the old `is_booked` boolean. max_students=1
+    # is a one-on-one slot and behaves exactly as is_booked did. "Full" is
+    # current_students >= max_students — see app/services/slots.py, which owns
+    # every change to current_students.
+    max_students: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
+    current_students: Mapped[int] = mapped_column(Integer, default=0, nullable=False)

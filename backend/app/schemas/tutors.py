@@ -8,7 +8,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 
 from app.models.match_request import MatchRequestStatus
 from app.models.tutor_availability_slot import DayOfWeek
-from app.schemas.common import CourseRead, SlotRead
+from app.schemas.common import CourseRead, Level, SlotRead
 
 
 class MatchRequestStatusFilter(str, enum.Enum):
@@ -18,6 +18,7 @@ class MatchRequestStatusFilter(str, enum.Enum):
     ACCEPTED = "accepted"
     REJECTED = "rejected"
     EXPIRED = "expired"
+    CANCELLED = "cancelled"
     ALL = "all"
 
 
@@ -29,6 +30,7 @@ class RequestingStudent(BaseModel):
     id: uuid.UUID
     full_name: str
     email: str
+    level: int | None
 
 
 class IncomingMatchRequest(BaseModel):
@@ -43,6 +45,7 @@ class IncomingMatchRequest(BaseModel):
 
 class CourseCreate(BaseModel):
     course_name: str = Field(min_length=1, max_length=120)
+    level: Level
 
     @field_validator("course_name")
     @classmethod
@@ -65,6 +68,9 @@ class SlotCreate(BaseModel):
     day_of_week: DayOfWeek
     start_time: time
     end_time: time
+    # 1 is one-on-one and behaves like the old is_booked flag; above 1 makes
+    # this a bulk slot, where requests are auto-accepted until it fills.
+    max_students: int = Field(default=1, ge=1, le=50)
 
     @model_validator(mode="after")
     def _check_time_range(self) -> "SlotCreate":
