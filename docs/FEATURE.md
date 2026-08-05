@@ -44,7 +44,7 @@ tutor_courses
 - **Student's own level** — captured during `POST /auth/complete-profile`
   (existing endpoint), alongside phone number.
 
-### Open question — RESOLVED
+### Open question — RESOLVED (Daniel, browse endpoint author)
 
 - **What happens if a student's `level` isn't set yet** when they hit the
   browse endpoint? **Decided: block.** Browsing and booking return `409` with
@@ -144,9 +144,94 @@ double-booking bug the original lock was built to prevent.
 
 ## Still open — resolve together before writing code
 
-1. Student browsing with no `level` set yet — what do they see?
+1. Student browsing with no `level` set yet — what do they see? **Resolved
+   above (Daniel):** blocked with a 409 until the profile sets a level.
 2. Migration strategy for existing `is_booked` demo data — migrate or wipe?
+   **Resolved (Sonsori, migration author):** migrate, not wipe. Every
+   existing row was implicitly 1-on-1 under the old model, so the mapping is
+   lossless and mechanical — `max_students = 1` for every existing row,
+   `current_students = 1 if is_booked else 0`. There's no ambiguous case to
+   decide by judgment; wiping would only be simpler, not more correct, so
+   there's no reason to lose data over it. See the migration in
+   `backend/alembic/versions/` for the exact `UPDATE`.
 3. Does a bulk slot need a floor as well as a ceiling (e.g. tutor won't run a
    session for just 1 student when they set `max_students = 5`)? Not raised
    yet, but the same clarifying instinct that resolved the earlier four open
-   questions suggests deciding on purpose rather than by omission.
+   questions suggests deciding on purpose rather than by omission. **Still
+   open** — this affects the auto-accept branch, which is Daniel's.
+
+## Schema status (Sonsori's side — done)
+
+Both migrations are in `backend/alembic/versions/`, applied and verified
+against a real Postgres database (forward *and* backward — including
+feeding it real `is_booked` rows and confirming the backfill maps them to
+`current_students` exactly):
+
+- `fd50ef01ec17` — `users.level` (nullable), `tutor_courses.level` (NOT NULL)
+- `8a3f6c2d19e4` — `tutor_availability_slots`: drops `is_booked`, adds
+  `max_students` (default 1) / `current_students` (default 0), with the
+  `is_booked → current_students` backfill described above
+
+`POST /auth/complete-profile` now accepts and validates `level` (must be
+100/200/300/400), and `GET /auth/me` returns it.
+
+**This branch does not run end-to-end on its own.** `is_booked` is gone and
+`tutor_courses.level` is required, so `tutors.py`, `students.py`'s
+booking logic, and `services/slots.py` — none of which this branch
+touches — will throw until Feature 2's slot-locking/auto-accept work and
+Feature 1's course-creation/duplicate-check/browse-filter work land on top
+of this schema. Confirmed this fails the way it should (a clean
+`NotNullViolation`, not a mystery 500) rather than leaving it to be
+discovered by surprise.
+
+## Verification checklist for once Daniel's PR lands
+
+Not written as test code yet — his endpoint shapes don't exist, so
+assertions against them would just be guessing. This is the concrete list
+to run through once they do, in the same "actually hit a real database"
+style as the last integration pass.
+
+**Feature 1 — course levels**
+- [ ] Same course name at two different levels does *not* collide as a
+  duplicate (two 201s) — the exact bug FEATURE.md calls out
+- [ ] Same course name *and* same level still collides (409), unchanged
+  from today
+- [ ] A student at level 100 does not see a course listed at level 200 in
+  `GET /students/tutors`, and vice versa — not just hidden client-side,
+  absent from the response entirely
+- [ ] Whatever open question #1 gets decided as (block / show nothing /
+  something else) for a student with no `level` set — verify that specific
+  behavior once it's picked, not before
+
+**Feature 2 — capacity**
+- [ ] `max_students = 1` (the default) behaves identically to the old
+  `is_booked` flow — full regression of the existing accept/reject/expiry
+  scenarios from the last integration pass
+- [ ] A bulk slot's first N requests (N = `max_students`) each get
+  `status: accepted` immediately, `responded_at` set, `current_students`
+  incrementing by exactly one each time
+- [ ] The (N+1)th request on a full bulk slot is rejected outright —
+  no pending state, `current_students` unchanged
+- [ ] **Concurrency, the part that matters most:** fire several simultaneous
+  requests at the single remaining spot on a bulk slot — exactly one
+  succeeds, the rest reject cleanly, none 500, none double-book. Same style
+  of test as the original 1-on-1 row-lock verification, extended to the
+  increment case
+- [ ] Tutor rejecting an already-auto-accepted bulk request decrements
+  `current_students` and actually frees the spot (a subsequent request
+  succeeds where it would have been rejected before)
+- [ ] Whatever open question #3 (floor) gets decided as — verify once
+  it's picked, not before
+
+**Cross-cutting**
+- [ ] Fresh clone, single `alembic upgrade head` to a clean database
+  succeeds with no manual intervention — watch specifically for a second
+  migration head if Daniel's model changes get autogenerated independently
+  rather than layered on top of `8a3f6c2d19e4`
+- [ ] The delete-decision fix from the last integration pass still holds
+  now that `tutor_courses.level` is required — deleting a course with only
+  resolved (rejected/expired) history against it should still purge that
+  history and succeed
+- [ ] Full regression of the untouched pieces (auth, admin, notifications,
+  student self-service cancel/withdraw/mark-read) — nothing here should
+  have moved, confirming it hasn't

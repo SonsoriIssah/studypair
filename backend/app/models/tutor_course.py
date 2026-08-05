@@ -13,7 +13,11 @@ class TutorCourse(Base):
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     tutor_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False)
     course_name: Mapped[str] = mapped_column(String, nullable=False)
-    # The level this course is taught at. Students only see courses at their own
-    # level, but a tutor may offer a course at any level, so this is a property
-    # of the course rather than of the tutor.
+    # FEATURE.md: a tutor teaching the same subject at two levels needs two
+    # rows — "Calculus I / 100" and "Calculus I / 200" are different
+    # listings. Required (not nullable): a course listing without a level
+    # doesn't mean anything under this model. NOT NULL is safe to add
+    # directly since tutor_courses is currently empty on this DB — if that's
+    # no longer true elsewhere, the migration will fail loudly rather than
+    # silently guessing a default.
     level: Mapped[int] = mapped_column(Integer, nullable=False)

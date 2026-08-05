@@ -16,8 +16,9 @@ class User(Base):
     email: Mapped[str] = mapped_column(String, unique=True, nullable=False)
     full_name: Mapped[str] = mapped_column(String, nullable=False)
     phone_number: Mapped[str | None] = mapped_column(String, nullable=True)
-    # Year of study (100-600). Google doesn't provide it, so like phone_number it
-    # is collected in the profile-completion step and is null until then.
+    # Nullable: unset until POST /auth/complete-profile. Resolved in
+    # FEATURE.md: the browse/booking endpoints in students.py block with a
+    # 409 while this is null, rather than showing an empty or unfiltered list.
     level: Mapped[int | None] = mapped_column(Integer, nullable=True)
     profile_completed: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     is_admin: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)

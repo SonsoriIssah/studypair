@@ -27,9 +27,11 @@ class TutorAvailabilitySlot(Base):
     day_of_week: Mapped[DayOfWeek] = mapped_column(Enum(DayOfWeek, name="day_of_week"), nullable=False)
     start_time: Mapped[time] = mapped_column(Time, nullable=False)
     end_time: Mapped[time] = mapped_column(Time, nullable=False)
-    # FEATURE.md: capacity replaces the old `is_booked` boolean. max_students=1
-    # is a one-on-one slot and behaves exactly as is_booked did. "Full" is
-    # current_students >= max_students — see app/services/slots.py, which owns
-    # every change to current_students.
-    max_students: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
-    current_students: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    # FEATURE.md: replaces is_booked. max_students=1 (default) behaves
+    # exactly like the old boolean — the 1-on-1 flow is unchanged. Anything
+    # higher is a bulk/group session. "Full" is computed:
+    # current_students >= max_students. Checking and incrementing this must
+    # happen as one atomic, row-locked operation on the request path — see
+    # app/services/slots.py, which owns every change to current_students.
+    max_students: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    current_students: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
