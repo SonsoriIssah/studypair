@@ -275,6 +275,23 @@ def delete_course(
             ),
         )
 
+    # The FK has no ON DELETE rule, so it blocks the delete regardless of
+    # status — only PENDING/ACCEPTED are excluded above, so anything left
+    # referencing this course is resolved history (REJECTED/EXPIRED/
+    # CANCELLED). Purge it first so the delete below doesn't hit the DB
+    # constraint. (Re-added: this was dropped in the level/capacity merge —
+    # confirmed the crash reproduces without it, see verification pass.)
+    db.query(MatchRequest).filter(
+        MatchRequest.course_id == course_id,
+        MatchRequest.status.in_(
+            [
+                MatchRequestStatus.REJECTED,
+                MatchRequestStatus.EXPIRED,
+                MatchRequestStatus.CANCELLED,
+            ]
+        ),
+    ).delete(synchronize_session=False)
+
     db.delete(course)
     db.commit()
 
@@ -354,6 +371,20 @@ def delete_availability_slot(
                 "and cannot be removed. Reject those requests first."
             ),
         )
+
+    # Same reasoning as delete_course: the FK has no ON DELETE rule, so purge
+    # the inert resolved-history rows first — anything PENDING/ACCEPTED was
+    # already blocked above. (Re-added: dropped in the level/capacity merge.)
+    db.query(MatchRequest).filter(
+        MatchRequest.slot_id == slot_id,
+        MatchRequest.status.in_(
+            [
+                MatchRequestStatus.REJECTED,
+                MatchRequestStatus.EXPIRED,
+                MatchRequestStatus.CANCELLED,
+            ]
+        ),
+    ).delete(synchronize_session=False)
 
     db.delete(slot)
     db.commit()
