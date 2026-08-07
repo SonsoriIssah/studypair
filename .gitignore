@@ -1,0 +1,28 @@
+# env files (backend + frontend)
+.env
+backend/.env
+frontend/.env
+.env.local
+.env.*.local
+
+# databases
+*.db
+backend/studypair.db
+
+# python / fastapi
+__pycache__/
+*.pyc
+.venv/
+venv/
+backend/.venv/
+
+# node / react
+node_modules/
+frontend/node_modules/
+dist/
+build/
+frontend/dist/
+*.tsbuildinfo
+
+# misc
+.DS_Store
