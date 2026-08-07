@@ -6,6 +6,7 @@ and admin.py for get_current_user — keep this dependency's signature stable.
 import uuid
 from datetime import datetime, timedelta, timezone
 
+import bcrypt
 from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
 from jose import JWTError, jwt
@@ -19,9 +20,20 @@ JWT_ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_DAYS = 7
 
 # tokenUrl points at the login route that kicks off the flow; it's only used
-# to populate the "Authorize" button in the OpenAPI docs UI. There is no
-# actual password grant — auth is Google-only (see routers/auth.py).
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/google/login")
+# to populate the "Authorize" button in the OpenAPI docs UI. Password login
+# and Google login both share the same Bearer token format.
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/login")
+
+
+def hash_password(password: str) -> str:
+    return bcrypt.hashpw(password.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
+
+
+def verify_password(password: str, hashed_password: str) -> bool:
+    try:
+        return bcrypt.checkpw(password.encode("utf-8"), hashed_password.encode("utf-8"))
+    except ValueError:
+        return False
 
 
 def create_access_token(user_id: uuid.UUID) -> str:

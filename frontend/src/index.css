@@ -1,0 +1,55 @@
+/* Self-hosted (npm `material-symbols` package), not the Google Fonts CDN —
+   the CDN is blocked in some environments (corporate proxies, ad-blockers,
+   sandboxed previews), and unlike a missing text font, a missing icon font
+   doesn't degrade gracefully: it renders the ligature name as raw text
+   ("home", "search_off", ...) instead of falling back to *something*
+   readable. Icons are load-bearing UI here, so this can't be CDN-optional. */
+@import 'material-symbols/outlined.css';
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+body {
+  @apply bg-background text-on-background antialiased;
+  font-family: 'Inter', sans-serif;
+  min-height: 100dvh;
+}
+
+.material-symbols-outlined {
+  font-variation-settings:
+    'FILL' 0,
+    'wght' 400,
+    'GRAD' 0,
+    'opsz' 24;
+  user-select: none;
+}
+
+.icon-filled {
+  font-variation-settings:
+    'FILL' 1,
+    'wght' 400,
+    'GRAD' 0,
+    'opsz' 24;
+}
+
+.scrollbar-hide::-webkit-scrollbar {
+  display: none;
+}
+.scrollbar-hide {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+.elevation-1 {
+  @apply bg-surface-container-lowest border border-outline-variant shadow-[0_4px_16px_rgba(53,37,205,0.05)];
+}
+
+.bg-pattern-group {
+  background-image: radial-gradient(circle at 100% 0%, rgba(53, 37, 205, 0.05) 0%, transparent 40%);
+}
+
+.bg-pattern-dots {
+  background-image: radial-gradient(#e2e8f0 1px, transparent 1px);
+  background-size: 8px 8px;
+}

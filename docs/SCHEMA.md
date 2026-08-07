@@ -9,10 +9,11 @@ A person using StudyPair. A single user can act as both a student and a tutor.
 | Column | Type | Notes |
 |---|---|---|
 | id | UUID | Primary key |
-| google_id | string | Unique, not null — from Google OAuth |
+| google_id | string | Unique, nullable — set for Google sign-ups, null for password sign-ups |
+| password_hash | string | Nullable — bcrypt hash, set for password sign-ups. Every row has at least one of google_id/password_hash, enforced at the app layer |
 | email | string | Unique, not null |
 | full_name | string | Not null |
-| phone_number | string | Nullable, contact info only, never SMS-verified |
+| phone_number | string | Nullable, contact info only, never SMS-verified. Encrypted at rest (app/core/encryption.py) |
 | level | integer | Nullable — 100/200/300/400, set at profile completion |
 | profile_completed | boolean | Default false |
 | created_at | datetime | Default now |

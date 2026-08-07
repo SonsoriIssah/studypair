@@ -170,6 +170,20 @@ def reject_request(
     return request
 
 
+@router.get("/me/courses", response_model=list[CourseRead])
+def list_my_courses(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> list[TutorCourse]:
+    """Courses this tutor currently teaches, across all levels."""
+    stmt = (
+        select(TutorCourse)
+        .where(TutorCourse.tutor_id == current_user.id)
+        .order_by(TutorCourse.course_name)
+    )
+    return list(db.scalars(stmt).all())
+
+
 @router.post(
     "/me/courses", response_model=CourseAddResult, status_code=http_status.HTTP_201_CREATED
 )
@@ -294,6 +308,20 @@ def delete_course(
 
     db.delete(course)
     db.commit()
+
+
+@router.get("/me/availability", response_model=list[SlotRead])
+def list_my_availability(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> list[TutorAvailabilitySlot]:
+    """This tutor's weekly recurring slots, in schedule order."""
+    stmt = (
+        select(TutorAvailabilitySlot)
+        .where(TutorAvailabilitySlot.tutor_id == current_user.id)
+        .order_by(TutorAvailabilitySlot.day_of_week, TutorAvailabilitySlot.start_time)
+    )
+    return list(db.scalars(stmt).all())
 
 
 @router.post(
