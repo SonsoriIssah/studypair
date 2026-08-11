@@ -173,6 +173,10 @@ def complete_profile(
 ) -> User:
     current_user.phone_number = payload.phone_number
     current_user.level = payload.level
+    if payload.full_name:
+        current_user.full_name = payload.full_name
+    if payload.university_id is not None:
+        current_user.university_id = payload.university_id
     current_user.profile_completed = True
     db.commit()
     db.refresh(current_user)

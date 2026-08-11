@@ -77,3 +77,17 @@ class SlotCreate(BaseModel):
         if self.start_time >= self.end_time:
             raise ValueError("start_time must be before end_time")
         return self
+
+
+class SlotUpdate(BaseModel):
+    """Partial update — only the fields you send are changed.
+
+    The full start/end-time-range check happens in the router against the
+    merged (existing + incoming) values, since either side alone doesn't
+    tell you enough here.
+    """
+
+    day_of_week: DayOfWeek | None = None
+    start_time: time | None = None
+    end_time: time | None = None
+    max_students: int | None = Field(default=None, ge=1, le=50)

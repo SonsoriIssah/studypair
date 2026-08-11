@@ -20,6 +20,10 @@ class User(Base):
     # Encrypted at rest (see app/core/encryption.py) — PII we don't need to
     # search or filter on, only display back to its owner.
     phone_number: Mapped[str | None] = mapped_column(EncryptedString, nullable=True)
+    # University-issued student ID number. Optional and unverified — there's
+    # no verification pipeline yet (see the "University verified" badge on
+    # the login screen, which is aspirational, not enforced).
+    university_id: Mapped[str | None] = mapped_column(EncryptedString, nullable=True)
     # Nullable: unset until POST /auth/complete-profile. Resolved in
     # FEATURE.md: the browse/booking endpoints in students.py block with a
     # 409 while this is null, rather than showing an empty or unfiltered list.

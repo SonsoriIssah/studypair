@@ -17,7 +17,7 @@ export default function RequestConfirmation() {
 
   // Only reachable by navigating here from a successful booking — a direct
   // visit has nothing to show, so bounce back to browsing.
-  if (!state) return <Navigate to="/" replace />;
+  if (!state) return <Navigate to="/browse" replace />;
 
   const time = `${state.dayOfWeek}, ${state.startTime.slice(0, 5)} - ${state.endTime.slice(0, 5)}`;
   const accepted = state.status === 'accepted';

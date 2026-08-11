@@ -1,4 +1,4 @@
-import { NavLink, Outlet } from 'react-router-dom';
+import { Link, NavLink, Outlet, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import Icon from './Icon';
 
@@ -10,14 +10,16 @@ interface NavItem {
 }
 
 const baseNavItems: NavItem[] = [
-  { to: '/', label: 'Home', icon: 'home', end: true },
+  { to: '/dashboard', label: 'Dashboard', icon: 'grid_view', end: true },
+  { to: '/browse', label: 'Find Tutors', icon: 'search' },
   { to: '/requests', label: 'Requests', icon: 'chat_bubble' },
-  { to: '/tutor', label: 'Tutor', icon: 'dashboard' },
+  { to: '/tutor', label: 'Tutor', icon: 'school' },
   { to: '/notifications', label: 'Alerts', icon: 'notifications' },
 ];
 
 export default function Layout() {
   const { user, logout } = useAuth();
+  const location = useLocation();
   const navItems = user?.is_admin
     ? [...baseNavItems, { to: '/admin', label: 'Admin', icon: 'admin_panel_settings' }]
     : baseNavItems;
@@ -28,6 +30,13 @@ export default function Layout() {
     .slice(0, 2)
     .join('')
     .toUpperCase();
+
+  // No separate "role" in the data model — any user can both request
+  // tutoring and tutor others. This just reflects which side of the app
+  // (student vs. tutor pages) the current route belongs to.
+  const isTutorView = location.pathname.startsWith('/tutor');
+  const viewLabel = isTutorView ? 'Tutor' : 'Student';
+  const switchTo = isTutorView ? '/dashboard' : '/tutor';
 
   return (
     <div className="min-h-screen bg-background text-on-background pb-24 pt-16 md:pb-0 md:pt-20">
@@ -59,12 +68,29 @@ export default function Layout() {
         </nav>
 
         <div className="flex items-center gap-3">
-          <div
-            className="hidden h-8 w-8 items-center justify-center rounded-full border border-outline-variant bg-primary-container text-label-sm font-bold text-on-primary-container sm:flex"
-            title={user?.full_name}
-          >
-            {initials}
+          <div className="hidden items-center gap-space-sm rounded-full border border-outline-variant bg-surface-container-lowest px-space-md py-1 md:flex">
+            <span className="text-[10px] font-bold uppercase tracking-wider text-on-surface-variant">
+              Viewing as
+            </span>
+            <span className="text-label-md font-bold text-on-surface">{viewLabel}</span>
+            <Link to={switchTo} className="ml-space-xs text-label-sm font-bold text-primary hover:underline">
+              Switch
+            </Link>
           </div>
+
+          <div className="hidden items-center gap-space-sm rounded-full border border-outline-variant bg-surface-container-low px-space-sm py-space-xs md:flex">
+            <div
+              className="flex h-8 w-8 items-center justify-center rounded-full bg-primary-container text-label-sm font-bold text-on-primary-container"
+              title={user?.full_name}
+            >
+              {initials}
+            </div>
+            <span className="text-label-md font-label-md text-on-surface">{user?.full_name}</span>
+            <span className="rounded-full bg-primary px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-on-primary">
+              {viewLabel}
+            </span>
+          </div>
+
           <button
             onClick={logout}
             className="rounded-full p-2 text-on-surface-variant transition-colors hover:bg-surface-container-low"

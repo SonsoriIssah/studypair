@@ -16,6 +16,7 @@ class UserRead(BaseModel):
     email: str
     full_name: str
     phone_number: str | None
+    university_id: str | None
     level: int | None
     profile_completed: bool
     is_admin: bool
@@ -83,6 +84,8 @@ class LoginRequest(BaseModel):
 class CompleteProfileRequest(BaseModel):
     phone_number: str
     level: int
+    full_name: str | None = None
+    university_id: str | None = None
 
     @field_validator("level")
     @classmethod
@@ -90,3 +93,10 @@ class CompleteProfileRequest(BaseModel):
         if value not in VALID_LEVELS:
             raise ValueError(f"level must be one of {sorted(VALID_LEVELS)}")
         return value
+
+    @field_validator("full_name")
+    @classmethod
+    def _non_empty_full_name(cls, value: str | None) -> str | None:
+        if value is not None and not value.strip():
+            raise ValueError("full_name cannot be blank")
+        return value.strip() if value else value

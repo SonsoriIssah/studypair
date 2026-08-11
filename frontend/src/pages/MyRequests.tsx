@@ -28,6 +28,27 @@ const statusIcon: Record<MatchRequestStatus, string> = {
   cancelled: 'block',
 };
 
+const avatarIcon: Record<MatchRequestStatus, string> = {
+  pending: 'person',
+  accepted: 'person',
+  rejected: 'person_off',
+  expired: 'timer_off',
+  cancelled: 'person_off',
+};
+
+const scheduleIcon: Record<MatchRequestStatus, string> = {
+  pending: 'schedule',
+  accepted: 'schedule',
+  rejected: 'event_busy',
+  expired: 'history',
+  cancelled: 'event_busy',
+};
+
+const blurClass: Partial<Record<MatchRequestStatus, string>> = {
+  pending: 'bg-amber-50',
+  accepted: 'bg-green-50',
+};
+
 function formatDate(iso: string) {
   return new Date(iso).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
 }
@@ -101,13 +122,20 @@ export default function MyRequests() {
       <div className="grid grid-cols-1 gap-space-lg md:grid-cols-2">
         {visible.map((r) => {
           const isActive = r.status === 'pending' || r.status === 'accepted';
+          const blur = blurClass[r.status];
           return (
             <div
               key={r.id}
-              className={`group relative overflow-hidden rounded-xl border border-outline-variant bg-surface-container-lowest p-space-md shadow-[0_4px_16px_rgba(53,37,205,0.05)] transition-all duration-300 hover:shadow-[0_8px_24px_rgba(53,37,205,0.1)] ${
+              className={`group relative overflow-hidden rounded-xl border border-outline-variant bg-surface-container-lowest p-space-lg shadow-[0_4px_16px_rgba(53,37,205,0.05)] transition-all duration-300 hover:shadow-[0_8px_24px_rgba(53,37,205,0.1)] ${
                 r.status === 'accepted' ? 'border-l-4 border-l-secondary' : ''
               } ${!isActive ? 'opacity-75' : ''}`}
             >
+              {blur && (
+                <div
+                  className={`pointer-events-none absolute -right-10 -top-10 h-32 w-32 rounded-full opacity-60 blur-3xl ${blur}`}
+                />
+              )}
+
               <div className="relative z-10 mb-space-sm flex items-start justify-between">
                 <div>
                   <span
@@ -117,17 +145,24 @@ export default function MyRequests() {
                   </span>
                   <h3 className="text-headline-md font-headline-md text-on-background">{r.course.course_name}</h3>
                 </div>
-                <Icon name={statusIcon[r.status]} className="text-outline-variant" />
+                <Icon
+                  name={statusIcon[r.status]}
+                  className="text-outline-variant transition-colors group-hover:text-primary"
+                />
               </div>
 
               <div className="relative z-10 mb-space-md flex items-center gap-3">
-                <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-full bg-surface-container text-on-surface-variant">
-                  <Icon name="person" className="text-[20px]" />
+                <div
+                  className={`flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-full bg-surface-container text-on-surface-variant ${
+                    !isActive ? 'opacity-50' : ''
+                  }`}
+                >
+                  <Icon name={avatarIcon[r.status]} className="text-[20px]" />
                 </div>
                 <div>
                   <p className="text-body-sm font-body-sm font-medium text-on-background">{r.tutor.full_name}</p>
                   <p className="text-label-sm font-label-sm text-on-surface-variant flex items-center gap-1">
-                    <Icon name="schedule" className="text-[14px]" />
+                    <Icon name={scheduleIcon[r.status]} className="text-[14px]" />
                     {r.slot.day_of_week} {r.slot.start_time.slice(0, 5)} · {formatDate(r.created_at)}
                   </p>
                 </div>

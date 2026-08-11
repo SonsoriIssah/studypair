@@ -27,6 +27,7 @@ from app.schemas.tutors import (
     MatchRequestStatusFilter,
     RequestingStudent,
     SlotCreate,
+    SlotUpdate,
 )
 from app.services.course_names import name_matches
 from app.services.expiry import (
@@ -361,6 +362,86 @@ def add_availability_slot(
         current_students=0,
     )
     db.add(slot)
+    db.commit()
+    db.refresh(slot)
+    return slot
+
+
+@router.patch("/me/availability/{slot_id}", response_model=SlotRead)
+def update_availability_slot(
+    slot_id: uuid.UUID,
+    payload: SlotUpdate,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> TutorAvailabilitySlot:
+    """Edit a slot's schedule and/or capacity. Only the sent fields change."""
+    slot = db.get(TutorAvailabilitySlot, slot_id)
+    if slot is None or slot.tutor_id != current_user.id:
+        raise HTTPException(status_code=http_status.HTTP_404_NOT_FOUND, detail="Slot not found")
+
+    new_day = payload.day_of_week if payload.day_of_week is not None else slot.day_of_week
+    new_start = payload.start_time if payload.start_time is not None else slot.start_time
+    new_end = payload.end_time if payload.end_time is not None else slot.end_time
+    new_max = payload.max_students if payload.max_students is not None else slot.max_students
+
+    if new_start >= new_end:
+        raise HTTPException(
+            status_code=http_status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="start_time must be before end_time",
+        )
+
+    if new_max < slot.current_students:
+        raise HTTPException(
+            status_code=http_status.HTTP_409_CONFLICT,
+            detail=f"Can't reduce capacity below the {slot.current_students} student(s) already booked",
+        )
+
+    schedule_changed = (
+        new_day != slot.day_of_week or new_start != slot.start_time or new_end != slot.end_time
+    )
+    if schedule_changed:
+        # Same rule as delete: an active ask or a real commitment against
+        # this slot's current time shouldn't get silently rescheduled out
+        # from under the student. Capacity-only edits skip this.
+        referencing = db.scalar(
+            select(func.count())
+            .select_from(MatchRequest)
+            .where(
+                MatchRequest.slot_id == slot_id,
+                MatchRequest.status.in_(
+                    [MatchRequestStatus.PENDING, MatchRequestStatus.ACCEPTED]
+                ),
+            )
+        )
+        if referencing:
+            raise HTTPException(
+                status_code=http_status.HTTP_409_CONFLICT,
+                detail=(
+                    "This slot has a pending or accepted match request against it, "
+                    "so its day/time can't change. Reject those requests first, or "
+                    "only update capacity."
+                ),
+            )
+
+        overlapping = db.scalar(
+            select(TutorAvailabilitySlot).where(
+                TutorAvailabilitySlot.tutor_id == current_user.id,
+                TutorAvailabilitySlot.id != slot_id,
+                TutorAvailabilitySlot.day_of_week == new_day,
+                TutorAvailabilitySlot.start_time < new_end,
+                TutorAvailabilitySlot.end_time > new_start,
+            )
+        )
+        if overlapping is not None:
+            raise HTTPException(
+                status_code=http_status.HTTP_409_CONFLICT,
+                detail="This overlaps a slot you already have on that day",
+            )
+
+    slot.day_of_week = new_day
+    slot.start_time = new_start
+    slot.end_time = new_end
+    slot.max_students = new_max
     db.commit()
     db.refresh(slot)
     return slot

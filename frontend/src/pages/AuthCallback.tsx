@@ -30,7 +30,7 @@ export default function AuthCallback() {
     }
 
     setToken(token);
-    refreshUser().then(() => navigate('/', { replace: true }));
+    refreshUser().then(() => navigate('/dashboard', { replace: true }));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 

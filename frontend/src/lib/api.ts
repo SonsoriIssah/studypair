@@ -104,6 +104,8 @@ export const registerWithEmail = async (
 export const completeProfile = (payload: {
     phone_number: string;
     level: number;
+    full_name?: string;
+    university_id?: string;
 }) =>
     request<User>("/auth/complete-profile", {
         method: "POST",
@@ -176,6 +178,20 @@ export const addAvailabilitySlot = (payload: {
 }) =>
     request<Slot>("/tutors/me/availability", {
         method: "POST",
+        body: JSON.stringify(payload),
+    });
+
+export const updateAvailabilitySlot = (
+    slotId: string,
+    payload: Partial<{
+        day_of_week: string;
+        start_time: string;
+        end_time: string;
+        max_students: number;
+    }>
+) =>
+    request<Slot>(`/tutors/me/availability/${slotId}`, {
+        method: "PATCH",
         body: JSON.stringify(payload),
     });
 

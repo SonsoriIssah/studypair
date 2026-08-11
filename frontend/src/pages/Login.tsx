@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useForm } from "react-hook-form";
-import { useNavigate } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 import Icon from "../components/Icon";
 import { useAuth } from "../context/AuthContext";
 
@@ -8,7 +8,6 @@ interface SignUpValues {
     fullName: string;
     email: string;
     password: string;
-    confirmPassword: string;
 }
 
 interface SignInValues {
@@ -18,35 +17,37 @@ interface SignInValues {
 
 type Mode = "signin" | "signup";
 
-const inputClass =
-    "w-full h-12 px-space-md rounded-xl border border-outline-variant bg-surface-container-lowest text-body-md font-body-md text-on-surface placeholder:text-outline focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary transition-colors";
-const labelClass = "mb-1 block text-label-md font-label-md text-on-surface-variant";
-const errorClass = "mt-1 text-body-sm font-body-sm text-error";
+const inputBaseClass =
+    "w-full rounded-lg px-4 py-3 pr-12 bg-surface text-on-surface placeholder-on-surface-variant/50 focus:outline-none transition-all";
+const inputDefaultClass =
+    "border border-outline-variant focus:border-primary focus:ring-1 focus:ring-primary";
+const labelClass = "px-1 font-label-sm text-label-sm text-on-surface-variant";
+const errorClass = "mt-1 px-1 text-body-sm font-body-sm text-error";
 
 export default function Login() {
     const navigate = useNavigate();
-    const { login, signInWithEmail, signUpWithEmail } = useAuth();
+    const location = useLocation();
+    const { signInWithEmail, signUpWithEmail } = useAuth();
 
-    const [mode, setMode] = useState<Mode>("signin");
+    const [mode, setMode] = useState<Mode>(
+        (location.state as { mode?: Mode } | null)?.mode === "signup" ? "signup" : "signin"
+    );
     const [error, setError] = useState<string | null>(null);
     const [submitting, setSubmitting] = useState(false);
+    const [showPassword, setShowPassword] = useState(false);
 
     const signInForm = useForm<SignInValues>({
         defaultValues: { email: "", password: "" },
     });
 
     const signUpForm = useForm<SignUpValues>({
-        defaultValues: {
-            fullName: "",
-            email: "",
-            password: "",
-            confirmPassword: "",
-        },
+        defaultValues: { fullName: "", email: "", password: "" },
     });
 
     const switchMode = (nextMode: Mode) => {
         setMode(nextMode);
         setError(null);
+        setShowPassword(false);
         signInForm.reset();
         signUpForm.reset();
     };
@@ -56,7 +57,7 @@ export default function Login() {
         setSubmitting(true);
         try {
             await signInWithEmail(values.email, values.password);
-            navigate("/", { replace: true });
+            navigate("/dashboard", { replace: true });
         } catch (err) {
             setError(err instanceof Error ? err.message : "Could not continue.");
         } finally {
@@ -66,23 +67,12 @@ export default function Login() {
 
     const onSignUp = async (values: SignUpValues) => {
         setError(null);
-
-        if (values.password !== values.confirmPassword) {
-            signUpForm.setError("confirmPassword", {
-                message: "Passwords do not match.",
-            });
-            return;
-        }
-
         setSubmitting(true);
         try {
-            await signUpWithEmail(
-                values.email,
-                values.password,
-                values.confirmPassword,
-                values.fullName
-            );
-            navigate("/", { replace: true });
+            // The visibility toggle lets users double-check what they typed,
+            // so there's no separate confirm-password field to compare against.
+            await signUpWithEmail(values.email, values.password, values.password, values.fullName);
+            navigate("/dashboard", { replace: true });
         } catch (err) {
             setError(err instanceof Error ? err.message : "Could not continue.");
         } finally {
@@ -91,250 +81,289 @@ export default function Login() {
     };
 
     return (
-        <div className="flex min-h-screen flex-col items-center justify-center bg-background p-container-margin md:p-8">
-            <main className="mx-auto w-full max-w-md">
-                <div className="mb-space-xl text-center">
-                    <div className="mb-space-lg flex h-20 w-20 items-center justify-center rounded-full bg-primary-container text-on-primary-container shadow-sm mx-auto">
-                        <Icon name="school" filled className="text-[40px]" />
+        <div className="flex min-h-screen items-center justify-center bg-surface-container p-4 text-on-surface md:p-8">
+            <div className="mx-auto flex w-full max-w-6xl flex-col overflow-hidden rounded-xl border border-outline-variant/30 bg-surface-container-lowest shadow-sm md:flex-row">
+                {/* Left Panel - Brand */}
+                <div className="relative hidden flex-col justify-between overflow-hidden bg-primary p-8 text-on-primary md:flex md:w-5/12 md:p-12">
+                    <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_at_top_right,_var(--tw-gradient-stops))] from-primary-fixed to-transparent opacity-20" />
+
+                    <div className="relative z-10 flex items-center gap-4">
+                        {mode === "signin" ? (
+                            <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-surface font-headline-md font-bold text-primary shadow-sm">
+                                SP
+                            </div>
+                        ) : (
+                            <div className="flex h-12 w-12 items-center justify-center rounded-lg bg-on-primary shadow-sm">
+                                <Icon name="school" className="text-primary text-[28px]" />
+                            </div>
+                        )}
+                        <div>
+                            <h2 className="m-0 font-headline-md text-headline-md text-on-primary">StudyPair</h2>
+                            <p className="m-0 font-label-sm text-label-sm text-primary-fixed-dim opacity-90">
+                                Connect. Learn. Excel.
+                            </p>
+                        </div>
                     </div>
 
-                    <h1 className="text-headline-lg font-headline-lg md:text-headline-xl md:font-headline-xl text-primary mb-space-xs">
-                        StudyPair
-                    </h1>
-                    <p className="text-body-lg font-body-lg text-on-surface-variant mb-space-md">
-                        Connect. Learn. Excel.
-                    </p>
-                    <p className="text-body-md font-body-md text-on-surface-variant mb-space-lg">
-                        Find peer tutors for your courses, book sessions in minutes, and
-                        get the help you need to ace your semester.
-                    </p>
+                    <div className="relative z-10 my-16 md:my-24">
+                        <span className="mb-6 inline-block rounded-full bg-primary-fixed/20 px-3 py-1 font-label-sm text-label-sm uppercase tracking-wider text-primary-fixed-dim">
+                            Peer Tutoring Platform
+                        </span>
+                        <h1 className="mb-6 font-headline-xl text-headline-xl text-on-primary">
+                            Study
+                            <br />
+                            Pair
+                        </h1>
+                        <p className="max-w-md font-body-lg text-body-lg text-primary-fixed-dim">
+                            Connect with fellow students to excel in your courses. Completely free,
+                            university-specific, and powered by peer support.
+                        </p>
+                    </div>
 
-                    <div className="mb-space-lg grid grid-cols-3 gap-space-sm text-left">
-                        <div className="flex flex-col items-center gap-1 rounded-lg border border-outline-variant bg-surface-container-lowest p-space-sm text-center">
-                            <Icon name="search" className="text-primary text-[24px]" />
-                            <span className="text-label-sm font-label-sm text-on-surface-variant">
-                                Find a tutor
-                            </span>
-                        </div>
-                        <div className="flex flex-col items-center gap-1 rounded-lg border border-outline-variant bg-surface-container-lowest p-space-sm text-center">
-                            <Icon name="event_available" className="text-primary text-[24px]" />
-                            <span className="text-label-sm font-label-sm text-on-surface-variant">
-                                Book a session
-                            </span>
-                        </div>
-                        <div className="flex flex-col items-center gap-1 rounded-lg border border-outline-variant bg-surface-container-lowest p-space-sm text-center">
-                            <Icon name="trending_up" className="text-primary text-[24px]" />
-                            <span className="text-label-sm font-label-sm text-on-surface-variant">
-                                Ace your courses
-                            </span>
-                        </div>
+                    <div className="relative z-10 flex flex-wrap gap-3">
+                        {mode === "signin" ? (
+                            <>
+                                <span className="flex items-center gap-2 rounded-full border border-primary-fixed/30 bg-primary-container/20 px-4 py-2 font-label-md text-label-md text-on-primary backdrop-blur-sm">
+                                    <Icon name="school" className="text-[16px] text-primary-fixed" />
+                                    Free for students
+                                </span>
+                                <span className="flex items-center gap-2 rounded-full border border-primary-fixed/30 bg-primary-container/20 px-4 py-2 font-label-md text-label-md text-on-primary backdrop-blur-sm">
+                                    <Icon name="login" filled className="text-[16px] text-primary-fixed" />
+                                    User Friendly
+                                </span>
+                                <span className="flex items-center gap-2 rounded-full border border-primary-fixed/30 bg-primary-container/20 px-4 py-2 font-label-md text-label-md text-on-primary backdrop-blur-sm">
+                                    <Icon name="verified" filled className="text-[16px] text-primary-fixed" />
+                                    University verified
+                                </span>
+                            </>
+                        ) : (
+                            <>
+                                <span className="flex items-center gap-2 rounded-full border border-primary-fixed/20 bg-primary-fixed/10 px-4 py-2 font-label-md text-label-md text-primary-fixed-dim">
+                                    <Icon name="check_circle" className="text-[16px]" />
+                                    Free for students
+                                </span>
+                                <span className="flex items-center gap-2 rounded-full border border-primary-fixed/20 bg-primary-fixed/10 px-4 py-2 font-label-md text-label-md text-primary-fixed-dim">
+                                    <Icon name="thumb_up" className="text-[16px]" />
+                                    User Friendly
+                                </span>
+                                <span className="flex items-center gap-2 rounded-full border border-primary-fixed/20 bg-primary-fixed/10 px-4 py-2 font-label-md text-label-md text-primary-fixed-dim">
+                                    <Icon name="verified_user" className="text-[16px]" />
+                                    University verified
+                                </span>
+                            </>
+                        )}
                     </div>
                 </div>
 
-                <div className="flex flex-col items-center rounded-xl border border-outline-variant bg-surface-container-lowest p-space-xl text-center shadow-lg">
-                    <div className="mb-space-lg grid w-full grid-cols-2 rounded-lg border border-outline-variant p-1">
-                        <button
-                            type="button"
-                            onClick={() => switchMode("signin")}
-                            className={`rounded-md px-3 py-2 text-label-md font-label-md transition-colors ${
-                                mode === "signin"
-                                    ? "bg-primary text-on-primary"
-                                    : "text-on-surface-variant"
-                            }`}
-                        >
-                            Sign in
-                        </button>
-                        <button
-                            type="button"
-                            onClick={() => switchMode("signup")}
-                            className={`rounded-md px-3 py-2 text-label-md font-label-md transition-colors ${
-                                mode === "signup"
-                                    ? "bg-primary text-on-primary"
-                                    : "text-on-surface-variant"
-                            }`}
-                        >
-                            Create account
-                        </button>
+                {/* Right Panel - Form */}
+                <div className="flex w-full flex-col justify-center overflow-y-auto bg-surface-container-lowest/95 p-8 backdrop-blur-md md:w-7/12 md:p-12 lg:p-16">
+                    <div className="mx-auto w-full max-w-md">
+                        {mode === "signin" ? (
+                            <>
+                                <div className="mb-space-lg flex h-12 w-12 items-center justify-center rounded-xl bg-primary font-headline-md font-bold text-on-primary shadow-sm md:hidden">
+                                    SP
+                                </div>
+
+                                <div className="mb-space-xl flex w-full items-center gap-space-md">
+                                    <div className="hidden h-12 w-12 items-center justify-center rounded-lg bg-primary font-headline-md font-bold text-on-primary shadow-sm md:flex">
+                                        SP
+                                    </div>
+                                    <div>
+                                        <h2 className="font-headline-lg text-headline-lg text-on-surface">Sign in</h2>
+                                        <p className="font-body-sm text-body-sm text-on-surface-variant">
+                                            Peer tutoring, made simple
+                                        </p>
+                                    </div>
+                                </div>
+
+                                <form onSubmit={signInForm.handleSubmit(onSignIn)} className="mb-space-lg space-y-4">
+                                    <div className="space-y-1">
+                                        <label className={labelClass}>Email Address</label>
+                                        <input
+                                            type="email"
+                                            {...signInForm.register("email", {
+                                                required: "Please enter your email address.",
+                                                pattern: { value: /.+@.+\..+/, message: "Please enter a valid email." },
+                                            })}
+                                            placeholder="you@example.com"
+                                            className={`${inputBaseClass} ${inputDefaultClass}`}
+                                        />
+                                        {signInForm.formState.errors.email && (
+                                            <p className={errorClass}>{signInForm.formState.errors.email.message}</p>
+                                        )}
+                                    </div>
+
+                                    <div className="space-y-1">
+                                        <label className={labelClass}>Password</label>
+                                        <div className="relative w-full">
+                                            <input
+                                                type={showPassword ? "text" : "password"}
+                                                {...signInForm.register("password", {
+                                                    required: "Please enter your password.",
+                                                })}
+                                                placeholder="Enter your password"
+                                                className={`${inputBaseClass} ${inputDefaultClass}`}
+                                            />
+                                            <button
+                                                type="button"
+                                                onClick={() => setShowPassword((v) => !v)}
+                                                className="absolute right-3 top-1/2 flex -translate-y-1/2 items-center justify-center text-on-surface-variant transition-colors hover:text-primary"
+                                            >
+                                                <Icon name={showPassword ? "visibility_off" : "visibility"} className="text-[20px]" />
+                                            </button>
+                                        </div>
+                                        {signInForm.formState.errors.password && (
+                                            <p className={errorClass}>{signInForm.formState.errors.password.message}</p>
+                                        )}
+                                    </div>
+
+                                    {error && <p className={errorClass}>{error}</p>}
+
+                                    <button
+                                        type="submit"
+                                        disabled={submitting}
+                                        className="mt-2 w-full rounded-lg bg-primary py-4 font-label-md text-label-md text-on-primary shadow-sm transition-opacity hover:opacity-90 disabled:opacity-60"
+                                    >
+                                        {submitting ? "Please wait…" : "Sign In"}
+                                    </button>
+                                </form>
+
+                                <div className="mb-space-lg flex w-full items-center justify-between font-label-sm text-label-sm">
+                                    <a href="#" className="text-primary underline-offset-2 hover:underline">
+                                        Forgot your password?
+                                    </a>
+                                    <a href="#" className="text-primary underline-offset-2 hover:underline">
+                                        Privacy Policy
+                                    </a>
+                                </div>
+
+                                <p className="mt-space-lg w-full text-center font-body-sm text-body-sm text-on-surface-variant">
+                                    Don't have an account?{" "}
+                                    <button
+                                        type="button"
+                                        onClick={() => switchMode("signup")}
+                                        className="font-label-md text-label-md text-primary underline-offset-2 hover:underline"
+                                    >
+                                        Sign Up
+                                    </button>
+                                </p>
+                            </>
+                        ) : (
+                            <>
+                                <div className="mb-10 text-center">
+                                    <div className="mx-auto mb-6 flex h-12 w-12 items-center justify-center rounded-lg bg-primary/10">
+                                        <Icon name="account_circle" className="text-primary text-[28px]" />
+                                    </div>
+                                    <h2 className="mb-3 font-headline-lg text-headline-lg text-on-surface">
+                                        Create your account
+                                    </h2>
+                                    <p className="font-body-md text-body-md text-on-surface-variant">
+                                        Join the community of student tutors and learners.
+                                    </p>
+                                </div>
+
+                                <form onSubmit={signUpForm.handleSubmit(onSignUp)} className="mb-6 space-y-4">
+                                    <div className="space-y-1">
+                                        <label className={labelClass}>Full Name</label>
+                                        <input
+                                            {...signUpForm.register("fullName", {
+                                                required: "Please enter your full name.",
+                                            })}
+                                            placeholder="Enter your full name"
+                                            className={`${inputBaseClass} ${inputDefaultClass}`}
+                                        />
+                                        {signUpForm.formState.errors.fullName && (
+                                            <p className={errorClass}>{signUpForm.formState.errors.fullName.message}</p>
+                                        )}
+                                    </div>
+
+                                    <div className="space-y-1">
+                                        <label className={labelClass}>Email Address</label>
+                                        <input
+                                            type="email"
+                                            {...signUpForm.register("email", {
+                                                required: "Please enter your email address.",
+                                                pattern: { value: /.+@.+\..+/, message: "Please enter a valid email." },
+                                            })}
+                                            placeholder="name@university.edu"
+                                            className={`${inputBaseClass} ${inputDefaultClass}`}
+                                        />
+                                        {signUpForm.formState.errors.email && (
+                                            <p className={errorClass}>{signUpForm.formState.errors.email.message}</p>
+                                        )}
+                                    </div>
+
+                                    <div className="space-y-1">
+                                        <label className={labelClass}>Password</label>
+                                        <div className="relative w-full">
+                                            <input
+                                                type={showPassword ? "text" : "password"}
+                                                {...signUpForm.register("password", {
+                                                    required: "Please enter your password.",
+                                                    minLength: {
+                                                        value: 8,
+                                                        message: "Password must be at least 8 characters long.",
+                                                    },
+                                                    validate: (value) =>
+                                                        (/[A-Z]/.test(value) && /[a-z]/.test(value) && /\d/.test(value)) ||
+                                                        "Password must include upper and lower case letters and at least one number.",
+                                                })}
+                                                placeholder="At least 8 characters"
+                                                className={`${inputBaseClass} ${inputDefaultClass}`}
+                                            />
+                                            <button
+                                                type="button"
+                                                onClick={() => setShowPassword((v) => !v)}
+                                                className="absolute right-3 top-1/2 flex -translate-y-1/2 items-center justify-center text-on-surface-variant transition-colors hover:text-primary"
+                                            >
+                                                <Icon name={showPassword ? "visibility_off" : "visibility"} className="text-[20px]" />
+                                            </button>
+                                        </div>
+                                        {signUpForm.formState.errors.password && (
+                                            <p className={errorClass}>{signUpForm.formState.errors.password.message}</p>
+                                        )}
+                                    </div>
+
+                                    {error && <p className={errorClass}>{error}</p>}
+
+                                    <button
+                                        type="submit"
+                                        disabled={submitting}
+                                        className="mt-2 w-full rounded-lg bg-primary py-4 font-label-md text-label-md text-on-primary shadow-sm transition-opacity hover:opacity-90 disabled:opacity-60"
+                                    >
+                                        {submitting ? "Please wait…" : "Create Account"}
+                                    </button>
+                                </form>
+
+                                <div className="space-y-6 text-center">
+                                    <p className="font-label-sm text-label-sm text-on-surface-variant">
+                                        By continuing, you agree to StudyPair's{" "}
+                                        <a href="#" className="text-primary hover:underline">
+                                            Terms
+                                        </a>{" "}
+                                        and{" "}
+                                        <a href="#" className="text-primary hover:underline">
+                                            Privacy Policy
+                                        </a>
+                                        .
+                                    </p>
+                                    <div className="my-6 h-px w-full bg-outline-variant/30" />
+                                    <p className="font-body-md text-body-md">
+                                        Already have an account?{" "}
+                                        <button
+                                            type="button"
+                                            onClick={() => switchMode("signin")}
+                                            className="font-bold text-primary hover:underline"
+                                        >
+                                            Sign in
+                                        </button>
+                                    </p>
+                                </div>
+                            </>
+                        )}
                     </div>
-
-                    {mode === "signin" && (
-                        <form
-                            onSubmit={signInForm.handleSubmit(onSignIn)}
-                            className="w-full space-y-space-sm text-left"
-                        >
-                            <div>
-                                <label className={labelClass}>Email</label>
-                                <input
-                                    type="email"
-                                    {...signInForm.register("email", {
-                                        required: "Please enter your email address.",
-                                        pattern: {
-                                            value: /.+@.+\..+/,
-                                            message: "Please enter a valid email.",
-                                        },
-                                    })}
-                                    placeholder="you@example.com"
-                                    className={inputClass}
-                                />
-                                {signInForm.formState.errors.email && (
-                                    <p className={errorClass}>
-                                        {signInForm.formState.errors.email.message}
-                                    </p>
-                                )}
-                            </div>
-
-                            <div>
-                                <label className={labelClass}>Password</label>
-                                <input
-                                    type="password"
-                                    {...signInForm.register("password", {
-                                        required: "Please enter your password.",
-                                    })}
-                                    placeholder="Your password"
-                                    className={inputClass}
-                                />
-                                {signInForm.formState.errors.password && (
-                                    <p className={errorClass}>
-                                        {signInForm.formState.errors.password.message}
-                                    </p>
-                                )}
-                            </div>
-
-                            {error && <p className={errorClass}>{error}</p>}
-
-                            <button
-                                type="submit"
-                                disabled={submitting}
-                                className="mt-space-sm flex h-14 w-full items-center justify-center rounded-xl bg-primary text-body-lg font-body-lg font-semibold text-on-primary shadow-sm transition-opacity hover:opacity-95 disabled:opacity-60"
-                            >
-                                {submitting ? "Please wait…" : "Sign in"}
-                            </button>
-                        </form>
-                    )}
-
-                    {mode === "signup" && (
-                        <form
-                            onSubmit={signUpForm.handleSubmit(onSignUp)}
-                            className="w-full space-y-space-sm text-left"
-                        >
-                            <div>
-                                <label className={labelClass}>Full name</label>
-                                <input
-                                    {...signUpForm.register("fullName", {
-                                        required: "Please enter your full name.",
-                                    })}
-                                    placeholder="Ada Lovelace"
-                                    className={inputClass}
-                                />
-                                {signUpForm.formState.errors.fullName && (
-                                    <p className={errorClass}>
-                                        {signUpForm.formState.errors.fullName.message}
-                                    </p>
-                                )}
-                            </div>
-
-                            <div>
-                                <label className={labelClass}>Email</label>
-                                <input
-                                    type="email"
-                                    {...signUpForm.register("email", {
-                                        required: "Please enter your email address.",
-                                        pattern: {
-                                            value: /.+@.+\..+/,
-                                            message: "Please enter a valid email.",
-                                        },
-                                    })}
-                                    placeholder="you@example.com"
-                                    className={inputClass}
-                                />
-                                {signUpForm.formState.errors.email && (
-                                    <p className={errorClass}>
-                                        {signUpForm.formState.errors.email.message}
-                                    </p>
-                                )}
-                            </div>
-
-                            <div>
-                                <label className={labelClass}>Password</label>
-                                <input
-                                    type="password"
-                                    {...signUpForm.register("password", {
-                                        required: "Please enter your password.",
-                                        minLength: {
-                                            value: 8,
-                                            message:
-                                                "Password must be at least 8 characters long.",
-                                        },
-                                        validate: (value) =>
-                                            (/[A-Z]/.test(value) &&
-                                                /[a-z]/.test(value) &&
-                                                /\d/.test(value)) ||
-                                            "Password must include upper and lower case letters and at least one number.",
-                                    })}
-                                    placeholder="At least 8 characters"
-                                    className={inputClass}
-                                />
-                                {signUpForm.formState.errors.password && (
-                                    <p className={errorClass}>
-                                        {signUpForm.formState.errors.password.message}
-                                    </p>
-                                )}
-                            </div>
-
-                            <div>
-                                <label className={labelClass}>Confirm password</label>
-                                <input
-                                    type="password"
-                                    {...signUpForm.register("confirmPassword", {
-                                        required: "Please confirm your password.",
-                                    })}
-                                    placeholder="Repeat your password"
-                                    className={inputClass}
-                                />
-                                {signUpForm.formState.errors.confirmPassword && (
-                                    <p className={errorClass}>
-                                        {signUpForm.formState.errors.confirmPassword.message}
-                                    </p>
-                                )}
-                            </div>
-
-                            {error && <p className={errorClass}>{error}</p>}
-
-                            <button
-                                type="submit"
-                                disabled={submitting}
-                                className="mt-space-sm flex h-14 w-full items-center justify-center rounded-xl bg-primary text-body-lg font-body-lg font-semibold text-on-primary shadow-sm transition-opacity hover:opacity-95 disabled:opacity-60"
-                            >
-                                {submitting ? "Please wait…" : "Create account"}
-                            </button>
-                        </form>
-                    )}
-
-                    <div className="my-space-lg flex w-full items-center gap-3 text-label-sm font-label-sm text-outline">
-                        <span className="h-px flex-1 bg-outline-variant" />
-                        OR
-                        <span className="h-px flex-1 bg-outline-variant" />
-                    </div>
-
-                    <button
-                        type="button"
-                        onClick={login}
-                        className="flex w-full items-center justify-center gap-space-sm rounded-lg border border-outline-variant bg-surface-container-highest px-6 py-4 text-body-md font-label-md text-on-surface transition-colors duration-200 hover:bg-surface-dim"
-                    >
-                        <svg className="h-6 w-6" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                            <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4" />
-                            <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853" />
-                            <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" fill="#FBBC05" />
-                            <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335" />
-                        </svg>
-                        Continue with Google
-                    </button>
                 </div>
-
-                <p className="mt-space-lg text-center text-label-sm font-label-sm text-on-surface-variant">
-                    By signing in, you agree to our Terms of Service and Privacy Policy.
-                </p>
-            </main>
+            </div>
         </div>
     );
 }

@@ -7,6 +7,8 @@ import AuthCallback from './pages/AuthCallback';
 import BrowseTutors from './pages/BrowseTutors';
 import CompleteProfile from './pages/CompleteProfile';
 import CourseApplications from './pages/CourseApplications';
+import Dashboard from './pages/Dashboard';
+import Landing from './pages/Landing';
 import Login from './pages/Login';
 import MyRequests from './pages/MyRequests';
 import Notifications from './pages/Notifications';
@@ -18,13 +20,15 @@ export default function App() {
   return (
     <AuthProvider>
       <Routes>
+        <Route path="/" element={<Landing />} />
         <Route path="/login" element={<Login />} />
         <Route path="/auth/callback" element={<AuthCallback />} />
         <Route path="/complete-profile" element={<CompleteProfile />} />
 
         <Route element={<ProtectedRoute />}>
           <Route element={<Layout />}>
-            <Route path="/" element={<BrowseTutors />} />
+            <Route path="/dashboard" element={<Dashboard />} />
+            <Route path="/browse" element={<BrowseTutors />} />
             <Route path="/request-confirmation" element={<RequestConfirmation />} />
             <Route path="/requests" element={<MyRequests />} />
             <Route path="/applications" element={<CourseApplications />} />

@@ -17,6 +17,7 @@ export interface User {
   email: string;
   full_name: string;
   phone_number: string | null;
+  university_id: string | null;
   level: Level | null;
   profile_completed: boolean;
   is_admin: boolean;
