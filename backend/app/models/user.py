@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import Boolean, DateTime, Integer, String
+from sqlalchemy import Boolean, DateTime, Integer, String, Text
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -24,6 +24,11 @@ class User(Base):
     # no verification pipeline yet (see the "University verified" badge on
     # the login screen, which is aspirational, not enforced).
     university_id: Mapped[str | None] = mapped_column(EncryptedString, nullable=True)
+    # A small (client-resized) image stored inline as a data: URL rather than
+    # in object storage — no file storage service exists in this project, and
+    # at this scale (a few hundred users, capped upload size) a text column
+    # is the pragmatic choice over standing up S3/R2 for one avatar field.
+    avatar_data_url: Mapped[str | None] = mapped_column(Text, nullable=True)
     # Nullable: unset until POST /auth/complete-profile. Resolved in
     # FEATURE.md: the browse/booking endpoints in students.py block with a
     # 409 while this is null, rather than showing an empty or unfiltered list.

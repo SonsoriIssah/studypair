@@ -22,7 +22,14 @@ from app.core.security import (
     verify_password,
 )
 from app.models.user import User
-from app.schemas.auth import CompleteProfileRequest, LoginRequest, RegisterRequest, TokenResponse, UserRead
+from app.schemas.auth import (
+    AvatarUpdateRequest,
+    CompleteProfileRequest,
+    LoginRequest,
+    RegisterRequest,
+    TokenResponse,
+    UserRead,
+)
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -178,6 +185,23 @@ def complete_profile(
     if payload.university_id is not None:
         current_user.university_id = payload.university_id
     current_user.profile_completed = True
+    db.commit()
+    db.refresh(current_user)
+    return current_user
+
+
+@router.post("/me/avatar", response_model=UserRead)
+def update_avatar(
+    payload: AvatarUpdateRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> User:
+    """Set (or replace) the current user's profile photo.
+
+    The frontend resizes the image before sending it — this endpoint just
+    validates it's still a reasonably-sized image data URL and stores it.
+    """
+    current_user.avatar_data_url = payload.data_url
     db.commit()
     db.refresh(current_user)
     return current_user

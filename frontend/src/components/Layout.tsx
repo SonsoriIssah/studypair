@@ -17,6 +17,17 @@ const baseNavItems: NavItem[] = [
   { to: '/notifications', label: 'Alerts', icon: 'notifications' },
 ];
 
+function AvatarCircle({ avatarUrl, initials }: { avatarUrl: string | null | undefined; initials: string }) {
+  if (avatarUrl) {
+    return <img src={avatarUrl} alt="" className="h-8 w-8 rounded-full object-cover" />;
+  }
+  return (
+    <div className="flex h-8 w-8 items-center justify-center rounded-full bg-primary-container text-label-sm font-bold text-on-primary-container">
+      {initials}
+    </div>
+  );
+}
+
 export default function Layout() {
   const { user, logout } = useAuth();
   const location = useLocation();
@@ -78,18 +89,25 @@ export default function Layout() {
             </Link>
           </div>
 
-          <div className="hidden items-center gap-space-sm rounded-full border border-outline-variant bg-surface-container-low px-space-sm py-space-xs md:flex">
-            <div
-              className="flex h-8 w-8 items-center justify-center rounded-full bg-primary-container text-label-sm font-bold text-on-primary-container"
-              title={user?.full_name}
-            >
-              {initials}
-            </div>
+          {/* Mobile: icon only. Desktop: full pill with name + role. */}
+          <Link
+            to="/profile"
+            title="Edit profile"
+            className="flex overflow-hidden rounded-full transition-opacity hover:opacity-90 md:hidden"
+          >
+            <AvatarCircle avatarUrl={user?.avatar_data_url} initials={initials} />
+          </Link>
+          <Link
+            to="/profile"
+            title="Edit profile"
+            className="hidden items-center gap-space-sm rounded-full border border-outline-variant bg-surface-container-low px-space-sm py-space-xs transition-colors hover:bg-surface-container-high md:flex"
+          >
+            <AvatarCircle avatarUrl={user?.avatar_data_url} initials={initials} />
             <span className="text-label-md font-label-md text-on-surface">{user?.full_name}</span>
             <span className="rounded-full bg-primary px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-on-primary">
               {viewLabel}
             </span>
-          </div>
+          </Link>
 
           <button
             onClick={logout}

@@ -171,6 +171,33 @@ def reject_request(
     return request
 
 
+@router.get("/course-names", response_model=list[str])
+def list_course_names(
+    level: int = Query(..., description="Only names already taught at this level."),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> list[str]:
+    """Distinct course names already taught at a level, across all tutors.
+
+    Backs the "pick a course" control on the add-course form — there's no
+    fixed course catalog (DECISIONS.md), so this is the closest thing: names
+    that already exist. Case/whitespace variants of the same name are folded
+    together via the same rule as name_matches, keeping whichever spelling
+    was entered first.
+    """
+    rows = db.scalars(
+        select(TutorCourse.course_name)
+        .where(TutorCourse.level == level)
+        .order_by(TutorCourse.course_name)
+    ).all()
+
+    seen: dict[str, str] = {}
+    for name in rows:
+        key = name.strip().lower()
+        seen.setdefault(key, name.strip())
+    return sorted(seen.values(), key=str.lower)
+
+
 @router.get("/me/courses", response_model=list[CourseRead])
 def list_my_courses(
     current_user: User = Depends(get_current_user),

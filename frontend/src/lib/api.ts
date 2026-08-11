@@ -101,11 +101,17 @@ export const registerWithEmail = async (
     });
     return response.access_token;
 };
+export const uploadAvatar = (dataUrl: string) =>
+    request<User>("/auth/me/avatar", {
+        method: "POST",
+        body: JSON.stringify({ data_url: dataUrl }),
+    });
+
 export const completeProfile = (payload: {
     phone_number: string;
     level: number;
+    university_id: string;
     full_name?: string;
-    university_id?: string;
 }) =>
     request<User>("/auth/complete-profile", {
         method: "POST",
@@ -157,6 +163,9 @@ export const markNotificationRead = (notificationId: string) =>
     });
 
 // ---- Tutor: courses & availability ----
+export const listCourseNames = (level: number) =>
+    request<string[]>(`/tutors/course-names?level=${level}`);
+
 export const listMyCourses = () => request<Course[]>("/tutors/me/courses");
 
 export const addCourse = (payload: { course_name: string; level: number }) =>

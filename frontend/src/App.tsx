@@ -8,6 +8,7 @@ import BrowseTutors from './pages/BrowseTutors';
 import CompleteProfile from './pages/CompleteProfile';
 import CourseApplications from './pages/CourseApplications';
 import Dashboard from './pages/Dashboard';
+import EditProfile from './pages/EditProfile';
 import Landing from './pages/Landing';
 import Login from './pages/Login';
 import MyRequests from './pages/MyRequests';
@@ -28,6 +29,7 @@ export default function App() {
         <Route element={<ProtectedRoute />}>
           <Route element={<Layout />}>
             <Route path="/dashboard" element={<Dashboard />} />
+            <Route path="/profile" element={<EditProfile />} />
             <Route path="/browse" element={<BrowseTutors />} />
             <Route path="/request-confirmation" element={<RequestConfirmation />} />
             <Route path="/requests" element={<MyRequests />} />

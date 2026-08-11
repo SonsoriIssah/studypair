@@ -3,7 +3,8 @@ import { useForm } from "react-hook-form";
 import { useNavigate } from "react-router-dom";
 import Icon from "../components/Icon";
 import { useAuth } from "../context/AuthContext";
-import { completeProfile } from "../lib/api";
+import { completeProfile, uploadAvatar } from "../lib/api";
+import { resizeImageToDataUrl } from "../lib/image";
 import { LEVEL_CHOICES } from "../types";
 
 interface CompleteProfileFormValues {
@@ -18,6 +19,23 @@ export default function CompleteProfile() {
     const navigate = useNavigate();
     const [error, setError] = useState<string | null>(null);
     const [submitting, setSubmitting] = useState(false);
+    const [avatarPreview, setAvatarPreview] = useState<string | null>(user?.avatar_data_url ?? null);
+    const [uploadingAvatar, setUploadingAvatar] = useState(false);
+
+    const onAvatarSelected = async (file: File | undefined) => {
+        if (!file) return;
+        setUploadingAvatar(true);
+        setError(null);
+        try {
+            const dataUrl = await resizeImageToDataUrl(file);
+            await uploadAvatar(dataUrl);
+            setAvatarPreview(dataUrl);
+        } catch (err) {
+            setError(err instanceof Error ? err.message : "Could not upload photo.");
+        } finally {
+            setUploadingAvatar(false);
+        }
+    };
     const {
         register,
         handleSubmit,
@@ -35,6 +53,7 @@ export default function CompleteProfile() {
     const selectedLevel = watch("level");
     const phoneValue = watch("phone");
     const fullNameValue = watch("fullName");
+    const universityIdValue = watch("universityId");
 
     const onSubmit = async (values: CompleteProfileFormValues) => {
         if (!values.level) {
@@ -48,7 +67,7 @@ export default function CompleteProfile() {
                 phone_number: values.phone,
                 level: values.level,
                 full_name: values.fullName.trim(),
-                university_id: values.universityId.trim() || undefined,
+                university_id: values.universityId.trim(),
             });
             await refreshUser();
             navigate("/dashboard", { replace: true });
@@ -65,7 +84,9 @@ export default function CompleteProfile() {
         !!fullNameValue?.trim() &&
         !!phoneValue &&
         phoneValue.replace(/\D/g, "").length >= 9 &&
-        !!selectedLevel;
+        phoneValue.replace(/\D/g, "").length <= 10 &&
+        !!selectedLevel &&
+        !!universityIdValue?.trim();
 
     return (
         <div className="min-h-screen overflow-hidden bg-surface text-on-surface antialiased">
@@ -136,17 +157,27 @@ export default function CompleteProfile() {
                                 <span className="font-normal text-on-surface-variant">(Optional)</span>
                             </label>
                             <div className="flex items-center gap-space-md">
-                                <div className="flex h-16 w-16 items-center justify-center rounded-full border border-dashed border-outline-variant bg-surface-container-high">
-                                    <Icon name="person" className="text-2xl text-outline-variant" />
+                                <div className="flex h-16 w-16 items-center justify-center overflow-hidden rounded-full border border-dashed border-outline-variant bg-surface-container-high">
+                                    {avatarPreview ? (
+                                        <img src={avatarPreview} alt="" className="h-full w-full object-cover" />
+                                    ) : (
+                                        <Icon name="person" className="text-2xl text-outline-variant" />
+                                    )}
                                 </div>
-                                <button
-                                    type="button"
-                                    disabled
-                                    title="Photo uploads aren't supported yet"
-                                    className="cursor-not-allowed rounded-lg border border-outline px-4 py-2 font-label-md text-label-md text-on-surface opacity-50"
+                                <label
+                                    className={`cursor-pointer rounded-lg border border-outline px-4 py-2 font-label-md text-label-md text-on-surface transition-colors hover:bg-surface-container-low ${
+                                        uploadingAvatar ? "cursor-not-allowed opacity-50" : ""
+                                    }`}
                                 >
-                                    Upload Photo
-                                </button>
+                                    {uploadingAvatar ? "Uploading…" : avatarPreview ? "Change Photo" : "Upload Photo"}
+                                    <input
+                                        type="file"
+                                        accept="image/*"
+                                        disabled={uploadingAvatar}
+                                        onChange={(e) => onAvatarSelected(e.target.files?.[0])}
+                                        className="hidden"
+                                    />
+                                </label>
                             </div>
                         </div>
 
@@ -176,8 +207,16 @@ export default function CompleteProfile() {
                             <input
                                 id="phone"
                                 type="tel"
+                                inputMode="numeric"
+                                maxLength={14}
                                 {...register("phone", {
                                     required: "Phone number is required.",
+                                    validate: (value) => {
+                                        const digits = value.replace(/\D/g, "");
+                                        if (digits.length < 9) return "Phone number is too short.";
+                                        if (digits.length > 10) return "Phone number must be at most 10 digits.";
+                                        return true;
+                                    },
                                 })}
                                 placeholder="e.g. 024 000 0000"
                                 className="h-12 w-full rounded-xl border border-outline-variant bg-surface-container-lowest px-4 font-body-md text-body-md text-on-surface outline-none transition-colors placeholder:text-outline-variant focus:border-primary focus:ring-1 focus:ring-primary"
@@ -220,19 +259,24 @@ export default function CompleteProfile() {
                         {/* Student ID */}
                         <div className="flex flex-col gap-space-xs">
                             <label className="font-label-md text-label-md text-on-surface" htmlFor="studentId">
-                                Student ID{" "}
-                                <span className="font-normal text-on-surface-variant">(Optional)</span>
+                                Student ID
                             </label>
                             <input
                                 id="studentId"
                                 type="text"
-                                {...register("universityId")}
+                                {...register("universityId", {
+                                    required: "Please enter your student ID.",
+                                })}
                                 placeholder="e.g. your university ID number"
                                 className="mt-1 h-12 w-full rounded-xl border border-outline-variant bg-surface-container-lowest px-4 font-body-md text-body-md text-on-surface outline-none transition-colors placeholder:text-outline-variant focus:border-primary focus:ring-1 focus:ring-primary"
                             />
-                            <p className="font-body-sm text-body-sm text-on-surface-variant">
-                                Your official university ID number.
-                            </p>
+                            {errors.universityId ? (
+                                <p className="text-body-sm font-body-sm text-error">{errors.universityId.message}</p>
+                            ) : (
+                                <p className="font-body-sm text-body-sm text-on-surface-variant">
+                                    Your official university ID number.
+                                </p>
+                            )}
                         </div>
 
                         {error && <p className="text-body-sm font-body-sm text-error">{error}</p>}

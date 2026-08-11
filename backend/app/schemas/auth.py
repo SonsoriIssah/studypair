@@ -17,6 +17,7 @@ class UserRead(BaseModel):
     full_name: str
     phone_number: str | None
     university_id: str | None
+    avatar_data_url: str | None
     level: int | None
     profile_completed: bool
     is_admin: bool
@@ -81,11 +82,27 @@ class LoginRequest(BaseModel):
         return normalized
 
 
+class AvatarUpdateRequest(BaseModel):
+    # A data: URL (e.g. "data:image/jpeg;base64,...") produced by resizing
+    # the image client-side before upload. The size cap keeps a single row
+    # reasonable given this is stored inline rather than in object storage.
+    data_url: str
+
+    @field_validator("data_url")
+    @classmethod
+    def _valid_data_url(cls, value: str) -> str:
+        if not value.startswith("data:image/"):
+            raise ValueError("data_url must be an image data URL")
+        if len(value) > 400_000:
+            raise ValueError("Image is too large — please use a smaller photo")
+        return value
+
+
 class CompleteProfileRequest(BaseModel):
     phone_number: str
     level: int
+    university_id: str
     full_name: str | None = None
-    university_id: str | None = None
 
     @field_validator("level")
     @classmethod
@@ -93,6 +110,22 @@ class CompleteProfileRequest(BaseModel):
         if value not in VALID_LEVELS:
             raise ValueError(f"level must be one of {sorted(VALID_LEVELS)}")
         return value
+
+    @field_validator("phone_number")
+    @classmethod
+    def _valid_phone(cls, value: str) -> str:
+        digits = re.sub(r"\D", "", value)
+        if not (9 <= len(digits) <= 10):
+            raise ValueError("phone_number must be 9-10 digits")
+        return value.strip()
+
+    @field_validator("university_id")
+    @classmethod
+    def _non_empty_university_id(cls, value: str) -> str:
+        cleaned = value.strip()
+        if not cleaned:
+            raise ValueError("university_id is required")
+        return cleaned
 
     @field_validator("full_name")
     @classmethod

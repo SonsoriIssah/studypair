@@ -8,6 +8,7 @@ import {
   ApiError,
   deleteAvailabilitySlot,
   deleteCourse,
+  listCourseNames,
   listIncomingRequests,
   listMyAvailability,
   listMyCourses,
@@ -18,6 +19,7 @@ import { DAYS_OF_WEEK, DayOfWeek, LEVEL_CHOICES, type Course, type IncomingMatch
 
 const dayButtons: DayOfWeek[] = DAYS_OF_WEEK;
 type Tab = 'requests' | 'courses' | 'availability' | 'group';
+const NEW_COURSE_OPTION = '__new__';
 
 function initials(name: string) {
   return name
@@ -152,9 +154,22 @@ export default function TutorDashboard() {
   const [loading, setLoading] = useState(true);
   const [acting, setActing] = useState<string | null>(null);
 
+  const [existingCourseNames, setExistingCourseNames] = useState<string[]>([]);
   const [courseName, setCourseName] = useState('');
+  const [newCourseName, setNewCourseName] = useState('');
   const [courseLevel, setCourseLevel] = useState<number>(LEVEL_CHOICES[0]);
   const [addingCourse, setAddingCourse] = useState(false);
+
+  useEffect(() => {
+    listCourseNames(courseLevel)
+      .then((names) => {
+        setExistingCourseNames(names);
+        // Default to picking an existing name when there is one; otherwise
+        // there's nothing to pick from, so go straight to "add a new course".
+        setCourseName(names.length > 0 ? names[0] : NEW_COURSE_OPTION);
+      })
+      .catch(() => setExistingCourseNames([]));
+  }, [courseLevel]);
 
   const [modalOpen, setModalOpen] = useState(false);
   const [editingSlotId, setEditingSlotId] = useState<string | null>(null);
@@ -220,12 +235,16 @@ export default function TutorDashboard() {
 
   const submitCourse = async (e: FormEvent) => {
     e.preventDefault();
-    if (!courseName.trim()) return;
+    const nameToAdd = courseName === NEW_COURSE_OPTION ? newCourseName.trim() : courseName;
+    if (!nameToAdd) return;
     setAddingCourse(true);
     setError(null);
     try {
-      await addCourse({ course_name: courseName.trim(), level: courseLevel });
-      setCourseName('');
+      await addCourse({ course_name: nameToAdd, level: courseLevel });
+      setNewCourseName('');
+      const names = await listCourseNames(courseLevel);
+      setExistingCourseNames(names);
+      setCourseName(names[0] ?? NEW_COURSE_OPTION);
       load();
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Could not add course.');
@@ -406,12 +425,6 @@ export default function TutorDashboard() {
           {!loading && tab === 'courses' && (
             <div className="flex flex-col gap-space-md">
               <form onSubmit={submitCourse} className="flex flex-wrap items-center gap-2">
-                <input
-                  value={courseName}
-                  onChange={(e) => setCourseName(e.target.value)}
-                  placeholder="Course name"
-                  className="h-10 min-w-0 flex-1 rounded-lg border border-outline-variant bg-surface-container-lowest px-3 text-body-sm font-body-sm text-on-surface focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
-                />
                 <select
                   value={courseLevel}
                   onChange={(e) => setCourseLevel(Number(e.target.value))}
@@ -423,15 +436,38 @@ export default function TutorDashboard() {
                     </option>
                   ))}
                 </select>
+                <select
+                  value={courseName}
+                  onChange={(e) => setCourseName(e.target.value)}
+                  className="h-10 min-w-0 flex-1 rounded-lg border border-outline-variant bg-surface-container-lowest px-3 text-body-sm font-body-sm text-on-surface focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+                >
+                  {existingCourseNames.map((name) => (
+                    <option key={name} value={name}>
+                      {name}
+                    </option>
+                  ))}
+                  <option value={NEW_COURSE_OPTION}>+ Add a new course…</option>
+                </select>
+                {courseName === NEW_COURSE_OPTION && (
+                  <input
+                    value={newCourseName}
+                    onChange={(e) => setNewCourseName(e.target.value)}
+                    placeholder="New course name"
+                    autoFocus
+                    className="h-10 min-w-0 flex-1 rounded-lg border border-outline-variant bg-surface-container-lowest px-3 text-body-sm font-body-sm text-on-surface focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+                  />
+                )}
                 <button
-                  disabled={addingCourse}
+                  disabled={addingCourse || (courseName === NEW_COURSE_OPTION && !newCourseName.trim())}
                   className="h-10 rounded-lg bg-primary px-4 text-label-md font-label-md text-on-primary transition-opacity hover:opacity-90 disabled:opacity-60"
                 >
                   Add
                 </button>
               </form>
               <p className="-mt-2 text-label-sm font-label-sm text-outline">
-                Adding a course notifies students with a matching open application.
+                {existingCourseNames.length > 0
+                  ? `Pick a course already taught at Level ${courseLevel}, or add a new one. Adding a course notifies students with a matching open application.`
+                  : `No courses listed at Level ${courseLevel} yet — you'll be the first. Adding a course notifies students with a matching open application.`}
               </p>
 
               <div className="grid grid-cols-1 gap-space-md sm:grid-cols-2">
