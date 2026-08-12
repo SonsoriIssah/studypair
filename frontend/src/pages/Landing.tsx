@@ -116,11 +116,11 @@ export default function Landing() {
                             <div className="group relative overflow-hidden rounded-xl border border-outline-variant/40 bg-surface p-space-lg shadow-sm transition-colors duration-300 hover:border-primary-container">
                                 <div className="absolute top-0 left-0 h-full w-1 bg-primary-container" />
                                 <div className="mb-space-lg flex h-12 w-12 items-center justify-center rounded-lg bg-primary-fixed text-primary-container">
-                                    <Icon name="login" filled className="text-3xl" />
+                                    <Icon name="mail" filled className="text-3xl" />
                                 </div>
-                                <h3 className="mb-space-sm text-headline-md font-headline-md">Sign in with Google</h3>
+                                <h3 className="mb-space-sm text-headline-md font-headline-md">Sign up with your university email</h3>
                                 <p className="text-body-md font-body-md text-on-surface-variant">
-                                    No passwords, just your university identity. Quick, secure access using your existing student credentials.
+                                    No third-party logins — just your university email and a password. We'll send a quick code to confirm it's really you.
                                 </p>
                             </div>
                             <div className="group relative overflow-hidden rounded-xl border border-outline-variant/40 bg-surface p-space-lg shadow-sm transition-colors duration-300 hover:border-secondary-container">
