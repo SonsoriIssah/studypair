@@ -62,6 +62,11 @@ export default function VerifyEmail() {
         }
     };
 
+    const onEditEmail = () => {
+        sessionStorage.removeItem(PENDING_VERIFICATION_EMAIL_KEY);
+        navigate("/login", { state: { mode: "signup", email } });
+    };
+
     const onResend = async () => {
         setError(null);
         setResent(false);
@@ -87,10 +92,17 @@ export default function VerifyEmail() {
                     <h1 className="mb-space-xs text-headline-lg font-headline-lg text-on-surface">
                         Check your email
                     </h1>
-                    <p className="mb-space-xl text-body-md font-body-md text-on-surface-variant">
+                    <p className="mb-space-xs text-body-md font-body-md text-on-surface-variant">
                         We sent a 6-digit code to <span className="font-semibold text-on-surface">{email}</span>.
                         Enter it below to finish creating your account.
                     </p>
+                    <button
+                        type="button"
+                        onClick={onEditEmail}
+                        className="mb-space-xl text-label-md font-label-md text-primary hover:underline"
+                    >
+                        Wrong email? Edit
+                    </button>
 
                     <form onSubmit={handleSubmit(onSubmit)} className="w-full space-y-space-sm text-left">
                         <div>

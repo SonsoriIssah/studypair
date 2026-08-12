@@ -29,9 +29,8 @@ export default function Login() {
     const location = useLocation();
     const { signInWithEmail, signUpWithEmail } = useAuth();
 
-    const [mode, setMode] = useState<Mode>(
-        (location.state as { mode?: Mode } | null)?.mode === "signup" ? "signup" : "signin"
-    );
+    const navState = location.state as { mode?: Mode; email?: string } | null;
+    const [mode, setMode] = useState<Mode>(navState?.mode === "signup" ? "signup" : "signin");
     const [error, setError] = useState<string | null>(null);
     const [submitting, setSubmitting] = useState(false);
     const [showPassword, setShowPassword] = useState(false);
@@ -40,8 +39,10 @@ export default function Login() {
         defaultValues: { email: "", password: "" },
     });
 
+    // Prefilled when arriving from the verify-email screen's "wrong email?
+    // edit" link, so fixing a typo doesn't mean retyping everything.
     const signUpForm = useForm<SignUpValues>({
-        defaultValues: { fullName: "", email: "", password: "" },
+        defaultValues: { fullName: "", email: navState?.email ?? "", password: "" },
     });
 
     const switchMode = (nextMode: Mode) => {
