@@ -9,11 +9,21 @@ interface VerifyEmailFormValues {
     code: string;
 }
 
+// Router state doesn't survive a page reload — which happens routinely here,
+// since opening the code from a mail app and switching back can reload the
+// tab. Persisting the pending email lets this screen recover after that.
+export const PENDING_VERIFICATION_EMAIL_KEY = "studypair_pending_verification_email";
+
 export default function VerifyEmail() {
     const location = useLocation();
     const navigate = useNavigate();
     const { completeEmailVerification } = useAuth();
-    const email = (location.state as { email?: string } | null)?.email ?? "";
+    const stateEmail = (location.state as { email?: string } | null)?.email;
+    const email = stateEmail ?? sessionStorage.getItem(PENDING_VERIFICATION_EMAIL_KEY) ?? "";
+
+    if (stateEmail) {
+        sessionStorage.setItem(PENDING_VERIFICATION_EMAIL_KEY, stateEmail);
+    }
 
     const [error, setError] = useState<string | null>(null);
     const [submitting, setSubmitting] = useState(false);
@@ -43,6 +53,7 @@ export default function VerifyEmail() {
         setSubmitting(true);
         try {
             await completeEmailVerification(email, values.code);
+            sessionStorage.removeItem(PENDING_VERIFICATION_EMAIL_KEY);
             navigate("/dashboard", { replace: true });
         } catch (err) {
             setError(err instanceof Error ? err.message : "Could not verify your email.");
