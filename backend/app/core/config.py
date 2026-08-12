@@ -31,6 +31,16 @@ class Settings(BaseSettings):
     SMTP_PASSWORD: str = ""
     SMTP_FROM_EMAIL: str = ""
 
+    # Resend (https://resend.com) sends the email-verification code at
+    # signup. Blank by default so the app still boots without it —
+    # app/services/email.py raises loudly at first actual send if unset.
+    # The default FROM address is Resend's shared sandbox sender, which
+    # works with no domain verification but (per Resend) only delivers to
+    # the account owner's own address — swap in a verified domain address
+    # once one exists.
+    RESEND_API_KEY: str = ""
+    RESEND_FROM_EMAIL: str = "StudyPair <onboarding@resend.dev>"
+
     # Symmetric key (Fernet, 32 url-safe base64 bytes) used to encrypt PII
     # columns such as User.phone_number at rest. Generate one with:
     #   python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"

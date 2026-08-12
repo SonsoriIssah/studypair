@@ -21,6 +21,7 @@ export interface User {
   avatar_data_url: string | null;
   level: Level | null;
   profile_completed: boolean;
+  email_verified: boolean;
   is_admin: boolean;
   created_at: string;
 }

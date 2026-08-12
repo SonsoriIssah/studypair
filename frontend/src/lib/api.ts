@@ -77,6 +77,7 @@ export const startGoogleLogin = () => {
     window.location.href = `${API_BASE_URL}/auth/google/login`;
 };
 export const fetchMe = () => request<User>("/auth/me");
+export const deleteAccount = () => request<void>("/auth/me", { method: "DELETE" });
 export const loginWithEmail = async (email: string, password: string) => {
     const response = await request<{ access_token: string }>("/auth/login", {
         method: "POST",
@@ -90,7 +91,9 @@ export const registerWithEmail = async (
     confirmPassword: string,
     full_name: string
 ) => {
-    const response = await request<{ access_token: string }>("/auth/register", {
+    // No token — the account can't sign in until the emailed code is
+    // confirmed via verifyEmail below.
+    const response = await request<{ email: string }>("/auth/register", {
         method: "POST",
         body: JSON.stringify({
             email,
@@ -99,8 +102,20 @@ export const registerWithEmail = async (
             full_name,
         }),
     });
+    return response.email;
+};
+export const verifyEmail = async (email: string, code: string) => {
+    const response = await request<{ access_token: string }>("/auth/verify-email", {
+        method: "POST",
+        body: JSON.stringify({ email, code }),
+    });
     return response.access_token;
 };
+export const resendVerificationCode = (email: string) =>
+    request<void>("/auth/resend-verification", {
+        method: "POST",
+        body: JSON.stringify({ email }),
+    });
 export const uploadAvatar = (dataUrl: string) =>
     request<User>("/auth/me/avatar", {
         method: "POST",

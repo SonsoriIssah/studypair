@@ -17,6 +17,14 @@ class User(Base):
     email: Mapped[str] = mapped_column(String, unique=True, nullable=False)
     full_name: Mapped[str] = mapped_column(String, nullable=False)
     password_hash: Mapped[str | None] = mapped_column(String, nullable=True)
+    # False until the signup verification code is confirmed (see
+    # app/services/email_verification.py). Google sign-ins are marked
+    # verified immediately — Google has already confirmed the address.
+    # Existing rows are backfilled true by the migration (server_default);
+    # this Python-side default only governs newly-created rows.
+    email_verified: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    email_verification_code_hash: Mapped[str | None] = mapped_column(String, nullable=True)
+    email_verification_expires_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     # Encrypted at rest (see app/core/encryption.py) — PII we don't need to
     # search or filter on, only display back to its owner.
     phone_number: Mapped[str | None] = mapped_column(EncryptedString, nullable=True)

@@ -20,6 +20,7 @@ class UserRead(BaseModel):
     avatar_data_url: str | None
     level: int | None
     profile_completed: bool
+    email_verified: bool
     is_admin: bool
     created_at: datetime
 
@@ -27,6 +28,32 @@ class UserRead(BaseModel):
 class TokenResponse(BaseModel):
     access_token: str
     token_type: str = "bearer"
+
+
+class RegisterResponse(BaseModel):
+    """No token yet — the account can't sign in until the email is verified."""
+
+    email: str
+    message: str = "Verification code sent"
+
+
+class VerifyEmailRequest(BaseModel):
+    email: str
+    code: str
+
+    @field_validator("email")
+    @classmethod
+    def _normalize_email(cls, value: str) -> str:
+        return value.strip().lower()
+
+
+class ResendVerificationRequest(BaseModel):
+    email: str
+
+    @field_validator("email")
+    @classmethod
+    def _normalize_email(cls, value: str) -> str:
+        return value.strip().lower()
 
 
 class RegisterRequest(BaseModel):
@@ -52,6 +79,8 @@ class RegisterRequest(BaseModel):
             raise ValueError("password must include both upper and lower case letters")
         if not re.search(r"\d", value):
             raise ValueError("password must include at least one number")
+        if not re.search(r"[^A-Za-z0-9]", value):
+            raise ValueError("password must include at least one symbol")
         return value
 
     @field_validator("full_name")

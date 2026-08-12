@@ -229,9 +229,9 @@ export default function Landing() {
                         <a href="#" className="text-label-sm font-label-sm text-on-surface-variant transition-all duration-200 hover:text-primary hover:underline">
                             Student Guidelines
                         </a>
-                        <a href="#" className="text-label-sm font-label-sm text-on-surface-variant transition-all duration-200 hover:text-primary hover:underline">
+                        <Link to="/privacy" className="text-label-sm font-label-sm text-on-surface-variant transition-all duration-200 hover:text-primary hover:underline">
                             Privacy Policy
-                        </a>
+                        </Link>
                         <a href="#" className="text-label-sm font-label-sm text-on-surface-variant transition-all duration-200 hover:text-primary hover:underline">
                             Contact Support
                         </a>

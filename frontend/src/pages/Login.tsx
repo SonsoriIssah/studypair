@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useForm } from "react-hook-form";
-import { useLocation, useNavigate } from "react-router-dom";
+import { Link, useLocation, useNavigate } from "react-router-dom";
 import Icon from "../components/Icon";
 import { useAuth } from "../context/AuthContext";
 
@@ -59,6 +59,13 @@ export default function Login() {
             await signInWithEmail(values.email, values.password);
             navigate("/dashboard", { replace: true });
         } catch (err) {
+            // Backend text is the source of truth (routers/auth.py:
+            // EMAIL_NOT_VERIFIED_DETAIL) — route to the code-entry screen
+            // instead of showing this as a generic error.
+            if (err instanceof Error && err.message.includes("verify your email")) {
+                navigate("/verify-email", { state: { email: values.email } });
+                return;
+            }
             setError(err instanceof Error ? err.message : "Could not continue.");
         } finally {
             setSubmitting(false);
@@ -72,7 +79,7 @@ export default function Login() {
             // The visibility toggle lets users double-check what they typed,
             // so there's no separate confirm-password field to compare against.
             await signUpWithEmail(values.email, values.password, values.password, values.fullName);
-            navigate("/dashboard", { replace: true });
+            navigate("/verify-email", { state: { email: values.email } });
         } catch (err) {
             setError(err instanceof Error ? err.message : "Could not continue.");
         } finally {
@@ -232,9 +239,9 @@ export default function Login() {
                                     <a href="#" className="text-primary underline-offset-2 hover:underline">
                                         Forgot your password?
                                     </a>
-                                    <a href="#" className="text-primary underline-offset-2 hover:underline">
+                                    <Link to="/privacy" className="text-primary underline-offset-2 hover:underline">
                                         Privacy Policy
-                                    </a>
+                                    </Link>
                                 </div>
 
                                 <p className="mt-space-lg w-full text-center font-body-sm text-body-sm text-on-surface-variant">
@@ -305,10 +312,13 @@ export default function Login() {
                                                         message: "Password must be at least 8 characters long.",
                                                     },
                                                     validate: (value) =>
-                                                        (/[A-Z]/.test(value) && /[a-z]/.test(value) && /\d/.test(value)) ||
-                                                        "Password must include upper and lower case letters and at least one number.",
+                                                        (/[A-Z]/.test(value) &&
+                                                            /[a-z]/.test(value) &&
+                                                            /\d/.test(value) &&
+                                                            /[^A-Za-z0-9]/.test(value)) ||
+                                                        "Password must include upper and lower case letters, a number, and a symbol.",
                                                 })}
-                                                placeholder="At least 8 characters"
+                                                placeholder="e.g. Str0ng!Pass"
                                                 className={`${inputBaseClass} ${inputDefaultClass}`}
                                             />
                                             <button
@@ -342,9 +352,9 @@ export default function Login() {
                                             Terms
                                         </a>{" "}
                                         and{" "}
-                                        <a href="#" className="text-primary hover:underline">
+                                        <Link to="/privacy" className="text-primary hover:underline">
                                             Privacy Policy
-                                        </a>
+                                        </Link>
                                         .
                                     </p>
                                     <div className="my-6 h-px w-full bg-outline-variant/30" />

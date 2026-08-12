@@ -1,9 +1,11 @@
 """Google OAuth login, profile completion, and the current user's profile.
 
 The app supports both Google OAuth and email/password sign-in. Password
-sign-up creates the account immediately — no email verification step (see
-docs/DECISIONS.md). The frontend stores the issued JWT in session storage
-and sends it as a Bearer token.
+sign-up creates the account immediately but withholds the access token
+until the emailed 6-digit code is confirmed via POST /verify-email — see
+app/services/email_verification.py. Google sign-ins skip this: Google has
+already confirmed the address. The frontend stores the issued JWT in
+session storage and sends it as a Bearer token.
 """
 import time
 
@@ -21,14 +23,26 @@ from app.core.security import (
     hash_password,
     verify_password,
 )
+from app.models import CourseApplication, MatchRequest, Notification, TutorAvailabilitySlot, TutorCourse
 from app.models.user import User
 from app.schemas.auth import (
     AvatarUpdateRequest,
     CompleteProfileRequest,
     LoginRequest,
     RegisterRequest,
+    RegisterResponse,
+    ResendVerificationRequest,
     TokenResponse,
     UserRead,
+    VerifyEmailRequest,
+)
+from app.services.email import send_email
+from app.services.email_verification import (
+    clear_code,
+    is_in_resend_cooldown,
+    issue_code,
+    verification_email_html,
+    verify_code,
 )
 
 router = APIRouter(prefix="/auth", tags=["auth"])
@@ -42,6 +56,10 @@ MAX_LOGIN_ATTEMPTS = 5
 LOGIN_LOCKOUT_SECONDS = 15 * 60
 
 FAILED_LOGIN_ATTEMPTS: dict[str, list[float]] = {}
+
+# Exact text the frontend pattern-matches on to route to the verify-email
+# screen instead of showing a generic login error.
+EMAIL_NOT_VERIFIED_DETAIL = "Please verify your email before signing in."
 
 
 def _register_failed_login(email: str) -> None:
@@ -67,9 +85,13 @@ def health():
     return {"status": "ok"}
 
 
-@router.post("/register", response_model=TokenResponse, status_code=status.HTTP_201_CREATED)
-def register(payload: RegisterRequest, db: Session = Depends(get_db)) -> TokenResponse:
-    """Create a password-auth account immediately — no email verification."""
+@router.post("/register", response_model=RegisterResponse, status_code=status.HTTP_201_CREATED)
+def register(payload: RegisterRequest, db: Session = Depends(get_db)) -> RegisterResponse:
+    """Create a password-auth account and email it a verification code.
+
+    No access token is issued here — the account can't sign in until
+    POST /verify-email confirms the code.
+    """
     normalized_email = payload.email
     existing_user = db.scalar(select(User).where(User.email == normalized_email))
     if existing_user is not None:
@@ -81,12 +103,65 @@ def register(payload: RegisterRequest, db: Session = Depends(get_db)) -> TokenRe
         google_id=None,
         password_hash=hash_password(payload.password),
         profile_completed=False,
+        email_verified=False,
     )
+    code = issue_code(user)
     db.add(user)
+    db.flush()
+
+    try:
+        send_email(user.email, "Your StudyPair verification code", verification_email_html(code))
+    except Exception:
+        # Don't leave an unverifiable, unreachable account behind — a send
+        # failure should be retry-able via registering again, not a 409
+        # dead-end because the row already exists with no way to reach it.
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="Could not send the verification email. Please try again shortly.",
+        )
+
     db.commit()
-    db.refresh(user)
+    return RegisterResponse(email=user.email)
+
+
+@router.post("/verify-email", response_model=TokenResponse)
+def verify_email(payload: VerifyEmailRequest, db: Session = Depends(get_db)) -> TokenResponse:
+    user = db.scalar(select(User).where(User.email == payload.email))
+    if user is None or not verify_code(user, payload.code):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid or expired code")
+
+    user.email_verified = True
+    clear_code(user)
+    db.commit()
 
     return TokenResponse(access_token=create_access_token(user.id), token_type="bearer")
+
+
+@router.post("/resend-verification", status_code=status.HTTP_204_NO_CONTENT)
+def resend_verification(payload: ResendVerificationRequest, db: Session = Depends(get_db)) -> None:
+    user = db.scalar(select(User).where(User.email == payload.email))
+    # Same response whether or not the account exists, or is already
+    # verified — this endpoint shouldn't let someone probe which emails
+    # are registered.
+    if user is None or user.email_verified:
+        return
+    if is_in_resend_cooldown(user):
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="Please wait a moment before requesting another code.",
+        )
+
+    code = issue_code(user)
+    try:
+        send_email(user.email, "Your StudyPair verification code", verification_email_html(code))
+    except Exception:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="Could not send the verification email. Please try again shortly.",
+        )
+    db.commit()
 
 
 @router.post("/login", response_model=TokenResponse)
@@ -103,6 +178,9 @@ def login(payload: LoginRequest, db: Session = Depends(get_db)) -> TokenResponse
     if user is None or not user.password_hash or not verify_password(payload.password, user.password_hash):
         _register_failed_login(normalized_email)
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid email or password")
+
+    if not user.email_verified:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=EMAIL_NOT_VERIFIED_DETAIL)
 
     _clear_failed_logins(normalized_email)
     return TokenResponse(access_token=create_access_token(user.id), token_type="bearer")
@@ -162,8 +240,11 @@ async def google_callback(request: Request, db: Session = Depends(get_db)) -> Re
         user = db.scalar(select(User).where(User.email == email))
         if user is not None:
             user.google_id = google_id
+            # Google has now confirmed they own this address, even if the
+            # row was originally created via unverified password signup.
+            user.email_verified = True
         else:
-            user = User(google_id=google_id, email=email, full_name=full_name)
+            user = User(google_id=google_id, email=email, full_name=full_name, email_verified=True)
             db.add(user)
         db.commit()
         db.refresh(user)
@@ -210,3 +291,33 @@ def update_avatar(
 @router.get("/me", response_model=UserRead)
 def me(current_user: User = Depends(get_current_user)) -> User:
     return current_user
+
+
+@router.delete("/me", status_code=status.HTTP_204_NO_CONTENT)
+def delete_account(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> None:
+    """Permanently delete the current user and everything tied to them.
+
+    No FK in this schema cascades on delete, so dependents are removed by
+    hand in dependency order: match requests first (they reference courses,
+    slots, and users), then the tutor's own courses/slots, then everything
+    else that references this user directly.
+    """
+    user_id = current_user.id
+
+    db.query(MatchRequest).filter(
+        (MatchRequest.student_id == user_id) | (MatchRequest.tutor_id == user_id)
+    ).delete(synchronize_session=False)
+    db.query(CourseApplication).filter(CourseApplication.student_id == user_id).delete(
+        synchronize_session=False
+    )
+    db.query(Notification).filter(Notification.user_id == user_id).delete(synchronize_session=False)
+    db.query(TutorAvailabilitySlot).filter(TutorAvailabilitySlot.tutor_id == user_id).delete(
+        synchronize_session=False
+    )
+    db.query(TutorCourse).filter(TutorCourse.tutor_id == user_id).delete(synchronize_session=False)
+
+    db.delete(current_user)
+    db.commit()

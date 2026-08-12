@@ -14,6 +14,7 @@ import {
     registerWithEmail,
     setToken,
     startGoogleLogin,
+    verifyEmail,
 } from "../lib/api";
 import type { User } from "../types";
 
@@ -29,6 +30,7 @@ interface AuthContextValue {
         confirmPassword: string,
         fullName: string
     ) => Promise<void>;
+    completeEmailVerification: (email: string, code: string) => Promise<void>;
     logout: () => void;
     refreshUser: () => Promise<void>;
 }
@@ -115,15 +117,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             throw new Error("Passwords do not match.");
         }
 
-        const token = await registerWithEmail(
-            normalizedEmail,
-            trimmedPassword,
-            confirmPassword.trim(),
-            trimmedName
-        );
+        // No token yet — registering only sends a verification code. The
+        // caller navigates to the verify-email screen next.
+        await registerWithEmail(normalizedEmail, trimmedPassword, confirmPassword.trim(), trimmedName);
+    };
+
+    const completeEmailVerification = async (email: string, code: string) => {
+        const normalizedEmail = email.trim().toLowerCase();
+        const trimmedCode = code.trim();
+        if (!trimmedCode) {
+            throw new Error("Please enter the code from your email.");
+        }
+
+        const token = await verifyEmail(normalizedEmail, trimmedCode);
         setToken(token);
         sessionStorage.setItem(LOCAL_EMAIL_KEY, normalizedEmail);
-        sessionStorage.setItem(LOCAL_NAME_KEY, trimmedName);
         await refreshUser();
     };
 
@@ -143,6 +151,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
                 login: startGoogleLogin,
                 signInWithEmail,
                 signUpWithEmail,
+                completeEmailVerification,
                 logout,
                 refreshUser,
             }}

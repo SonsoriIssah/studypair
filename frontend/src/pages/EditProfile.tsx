@@ -1,10 +1,13 @@
 import { useState } from "react";
 import { useForm } from "react-hook-form";
+import { useNavigate } from "react-router-dom";
 import Icon from "../components/Icon";
 import { useAuth } from "../context/AuthContext";
-import { completeProfile, uploadAvatar } from "../lib/api";
+import { completeProfile, deleteAccount, uploadAvatar } from "../lib/api";
 import { resizeImageToDataUrl } from "../lib/image";
 import { LEVEL_CHOICES } from "../types";
+
+const DELETE_CONFIRMATION_WORD = "DELETE";
 
 interface EditProfileFormValues {
     fullName: string;
@@ -14,12 +17,31 @@ interface EditProfileFormValues {
 }
 
 export default function EditProfile() {
-    const { user, refreshUser } = useAuth();
+    const { user, refreshUser, logout } = useAuth();
+    const navigate = useNavigate();
     const [error, setError] = useState<string | null>(null);
     const [saved, setSaved] = useState(false);
     const [submitting, setSubmitting] = useState(false);
     const [avatarPreview, setAvatarPreview] = useState<string | null>(user?.avatar_data_url ?? null);
     const [uploadingAvatar, setUploadingAvatar] = useState(false);
+
+    const [deleteModalOpen, setDeleteModalOpen] = useState(false);
+    const [deleteConfirmText, setDeleteConfirmText] = useState("");
+    const [deleting, setDeleting] = useState(false);
+    const [deleteError, setDeleteError] = useState<string | null>(null);
+
+    const confirmDelete = async () => {
+        setDeleting(true);
+        setDeleteError(null);
+        try {
+            await deleteAccount();
+            logout();
+            navigate("/", { replace: true });
+        } catch (err) {
+            setDeleteError(err instanceof Error ? err.message : "Could not delete your account.");
+            setDeleting(false);
+        }
+    };
 
     const onAvatarSelected = async (file: File | undefined) => {
         if (!file) return;
@@ -202,6 +224,64 @@ export default function EditProfile() {
                     {submitting ? "Saving…" : "Save Changes"}
                 </button>
             </form>
+
+            <div className="mt-space-xl rounded-xl border border-error/30 bg-error-container/20 p-space-lg">
+                <h2 className="mb-space-xs text-headline-md font-headline-md text-on-surface">Danger zone</h2>
+                <p className="mb-space-md text-body-sm font-body-sm text-on-surface-variant">
+                    Deleting your account permanently removes your profile, courses, availability, requests, and
+                    applications. This cannot be undone.
+                </p>
+                <button
+                    type="button"
+                    onClick={() => setDeleteModalOpen(true)}
+                    className="rounded-lg border border-error px-4 py-2 font-label-md text-label-md text-error transition-colors hover:bg-error-container"
+                >
+                    Delete Account
+                </button>
+            </div>
+
+            {deleteModalOpen && (
+                <div className="fixed inset-0 z-[100] flex items-center justify-center bg-on-surface/40 p-4 backdrop-blur-sm">
+                    <div className="w-full max-w-sm rounded-2xl border border-outline-variant/30 bg-surface-container-lowest p-space-lg shadow-2xl">
+                        <h3 className="mb-space-xs text-headline-md font-headline-md text-on-surface">
+                            Delete your account?
+                        </h3>
+                        <p className="mb-space-md text-body-sm font-body-sm text-on-surface-variant">
+                            This is permanent — your profile, courses, availability, requests, and applications
+                            will all be deleted. Type <span className="font-bold">{DELETE_CONFIRMATION_WORD}</span>{" "}
+                            to confirm.
+                        </p>
+                        <input
+                            value={deleteConfirmText}
+                            onChange={(e) => setDeleteConfirmText(e.target.value)}
+                            placeholder={DELETE_CONFIRMATION_WORD}
+                            className="mb-space-md h-12 w-full rounded-xl border border-outline-variant bg-surface-container-lowest px-4 font-body-md text-body-md text-on-surface outline-none focus:border-error focus:ring-1 focus:ring-error"
+                        />
+                        {deleteError && (
+                            <p className="mb-space-md text-body-sm font-body-sm text-error">{deleteError}</p>
+                        )}
+                        <div className="flex gap-3">
+                            <button
+                                onClick={() => {
+                                    setDeleteModalOpen(false);
+                                    setDeleteConfirmText("");
+                                    setDeleteError(null);
+                                }}
+                                className="flex-1 rounded-xl bg-surface-container-high px-4 py-3 text-label-md font-label-md text-on-surface transition-colors hover:bg-surface-container-highest"
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                onClick={confirmDelete}
+                                disabled={deleteConfirmText !== DELETE_CONFIRMATION_WORD || deleting}
+                                className="flex-1 rounded-xl bg-error px-4 py-3 text-label-md font-label-md text-on-error transition-opacity hover:opacity-90 disabled:opacity-50"
+                            >
+                                {deleting ? "Deleting…" : "Delete Account"}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 }

@@ -13,7 +13,9 @@ import Landing from './pages/Landing';
 import Login from './pages/Login';
 import MyRequests from './pages/MyRequests';
 import Notifications from './pages/Notifications';
+import PrivacyPolicy from './pages/PrivacyPolicy';
 import RequestConfirmation from './pages/RequestConfirmation';
+import VerifyEmail from './pages/VerifyEmail';
 import TutorDashboard from './pages/TutorDashboard';
 import TutorRequests from './pages/TutorRequests';
 
@@ -23,6 +25,8 @@ export default function App() {
       <Routes>
         <Route path="/" element={<Landing />} />
         <Route path="/login" element={<Login />} />
+        <Route path="/privacy" element={<PrivacyPolicy />} />
+        <Route path="/verify-email" element={<VerifyEmail />} />
         <Route path="/auth/callback" element={<AuthCallback />} />
         <Route path="/complete-profile" element={<CompleteProfile />} />
 
