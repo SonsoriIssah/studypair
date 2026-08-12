@@ -25,6 +25,12 @@ class User(Base):
     email_verified: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     email_verification_code_hash: Mapped[str | None] = mapped_column(String, nullable=True)
     email_verification_expires_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    # Same shape as the pair above, kept separate rather than shared: signup
+    # verification and password reset are different security contexts (one
+    # gates account creation, the other gates access to an existing one), and
+    # an in-flight code for one shouldn't accidentally satisfy the other.
+    password_reset_code_hash: Mapped[str | None] = mapped_column(String, nullable=True)
+    password_reset_expires_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     # Encrypted at rest (see app/core/encryption.py) — PII we don't need to
     # search or filter on, only display back to its owner.
     phone_number: Mapped[str | None] = mapped_column(EncryptedString, nullable=True)

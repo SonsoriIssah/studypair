@@ -237,9 +237,9 @@ export default function Login() {
                                 </form>
 
                                 <div className="mb-space-lg flex w-full items-center justify-between font-label-sm text-label-sm">
-                                    <a href="#" className="text-primary underline-offset-2 hover:underline">
+                                    <Link to="/forgot-password" className="text-primary underline-offset-2 hover:underline">
                                         Forgot your password?
-                                    </a>
+                                    </Link>
                                     <Link to="/privacy" className="text-primary underline-offset-2 hover:underline">
                                         Privacy Policy
                                     </Link>

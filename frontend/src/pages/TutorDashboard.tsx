@@ -65,6 +65,8 @@ function RequestCard({
   acting: boolean;
   onRespond: (id: string, action: 'accept' | 'reject') => void;
 }) {
+  const [confirmingRemove, setConfirmingRemove] = useState(false);
+
   return (
     <article
       className={`flex flex-col gap-space-md rounded-xl border border-outline-variant bg-surface-container-lowest p-space-md shadow-sm ${
@@ -130,10 +132,28 @@ function RequestCard({
               Reject
             </button>
           </>
+        ) : confirmingRemove ? (
+          <>
+            <button
+              disabled={acting}
+              onClick={() => setConfirmingRemove(false)}
+              className="flex flex-1 items-center justify-center gap-2 rounded-lg bg-surface-container-highest py-2.5 text-label-md font-label-md text-on-surface transition-colors hover:bg-surface-dim disabled:opacity-60"
+            >
+              Cancel
+            </button>
+            <button
+              disabled={acting}
+              onClick={() => onRespond(request.id, 'reject')}
+              className="flex flex-1 items-center justify-center gap-2 rounded-lg bg-error py-2.5 text-label-md font-label-md text-on-error transition-opacity hover:opacity-90 disabled:opacity-60"
+            >
+              <Icon name="person_remove" className="text-[20px]" />
+              Confirm removal
+            </button>
+          </>
         ) : (
           <button
             disabled={acting}
-            onClick={() => onRespond(request.id, 'reject')}
+            onClick={() => setConfirmingRemove(true)}
             className="flex w-full items-center justify-center gap-2 rounded-lg bg-surface-container-highest py-2.5 text-label-md font-label-md text-on-surface transition-colors hover:bg-surface-dim disabled:opacity-60"
           >
             <Icon name="person_remove" className="text-[20px]" />

@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import Icon from '../components/Icon';
-import { adminListCourseApplications, adminListUsers, ApiError } from '../lib/api';
+import { adminListCourseApplications, adminListUsers, adminSetUserAdmin, ApiError } from '../lib/api';
+import { useAuth } from '../context/AuthContext';
 import type { CourseApplication, User } from '../types';
 
 function initials(name: string) {
@@ -13,11 +14,13 @@ function initials(name: string) {
 }
 
 export default function AdminPanel() {
+  const { user: currentUser } = useAuth();
   const [users, setUsers] = useState<User[]>([]);
   const [openApplications, setOpenApplications] = useState<CourseApplication[]>([]);
   const [search, setSearch] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [updatingId, setUpdatingId] = useState<string | null>(null);
 
   useEffect(() => {
     Promise.all([adminListUsers(), adminListCourseApplications('open')])
@@ -28,6 +31,19 @@ export default function AdminPanel() {
       .catch((err) => setError(err instanceof ApiError ? err.message : 'Could not load admin data.'))
       .finally(() => setLoading(false));
   }, []);
+
+  const toggleAdmin = async (target: User) => {
+    setUpdatingId(target.id);
+    setError(null);
+    try {
+      const updated = await adminSetUserAdmin(target.id, !target.is_admin);
+      setUsers((prev) => prev.map((u) => (u.id === updated.id ? updated : u)));
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Could not update admin access.');
+    } finally {
+      setUpdatingId(null);
+    }
+  };
 
   // Demand by course: how many open applications share a course name,
   // so the dev team can see what's most requested at a glance.
@@ -134,11 +150,25 @@ export default function AdminPanel() {
                   <td className="p-space-md text-body-sm font-body-sm text-on-surface-variant">{u.email}</td>
                   <td className="p-space-md text-body-sm font-body-sm text-on-surface-variant">{u.level ?? '—'}</td>
                   <td className="p-space-md">
-                    {u.is_admin && (
-                      <span className="inline-flex items-center rounded-full bg-tertiary-container px-2 py-0.5 text-label-sm font-label-sm text-on-tertiary-container">
-                        Admin
-                      </span>
-                    )}
+                    <div className="flex items-center gap-2">
+                      {u.is_admin && (
+                        <span className="inline-flex items-center rounded-full bg-tertiary-container px-2 py-0.5 text-label-sm font-label-sm text-on-tertiary-container">
+                          Admin
+                        </span>
+                      )}
+                      <button
+                        onClick={() => toggleAdmin(u)}
+                        disabled={updatingId === u.id || (u.is_admin && u.id === currentUser?.id)}
+                        title={
+                          u.is_admin && u.id === currentUser?.id
+                            ? "You can't remove your own admin access"
+                            : undefined
+                        }
+                        className="text-label-sm font-label-sm text-primary hover:underline disabled:cursor-not-allowed disabled:text-outline disabled:no-underline"
+                      >
+                        {u.is_admin ? 'Revoke' : 'Promote to admin'}
+                      </button>
+                    </div>
                   </td>
                 </tr>
               ))}

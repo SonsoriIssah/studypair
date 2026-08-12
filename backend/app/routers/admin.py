@@ -1,6 +1,11 @@
-"""Admin-only visibility routes for the dev team (docs/DECISIONS.md: not a
-public-facing feature, no editing in v1 — read-only).
+"""Admin-only visibility routes for the dev team.
+
+Originally read-only per docs/DECISIONS.md; the one write action (granting or
+revoking admin access) was added because there was otherwise no way to make
+the *first* admin, or any subsequent one, without a direct DB edit.
 """
+import uuid
+
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -9,6 +14,7 @@ from app.core.database import get_db
 from app.core.security import get_current_user
 from app.models.course_application import CourseApplication, CourseApplicationStatus
 from app.models.user import User
+from app.schemas.admin import SetAdminRequest
 from app.schemas.auth import UserRead
 from app.schemas.students import CourseApplicationRead
 
@@ -47,3 +53,29 @@ def list_users(
 ) -> list[User]:
     stmt = select(User).order_by(User.created_at.desc())
     return list(db.scalars(stmt).all())
+
+
+@router.patch("/users/{user_id}", response_model=UserRead)
+def set_admin(
+    user_id: uuid.UUID,
+    payload: SetAdminRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_admin),
+) -> User:
+    """Grant or revoke admin access. The only way to do this before now was
+    direct DB access — this is the self-service replacement.
+    """
+    if user_id == current_user.id and not payload.is_admin:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="You can't remove your own admin access",
+        )
+
+    user = db.get(User, user_id)
+    if user is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+
+    user.is_admin = payload.is_admin
+    db.commit()
+    db.refresh(user)
+    return user

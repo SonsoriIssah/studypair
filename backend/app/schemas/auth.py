@@ -9,6 +9,26 @@ from pydantic import BaseModel, ConfigDict, field_validator, model_validator
 VALID_LEVELS = {100, 200, 300, 400}
 
 
+def _validate_password_strength(value: str) -> str:
+    """Shared by signup and password-reset — both create/replace a password_hash."""
+    if len(value) < 8:
+        raise ValueError("password must be at least 8 characters long")
+    if not re.search(r"[A-Z]", value) or not re.search(r"[a-z]", value):
+        raise ValueError("password must include both upper and lower case letters")
+    if not re.search(r"\d", value):
+        raise ValueError("password must include at least one number")
+    if not re.search(r"[^A-Za-z0-9]", value):
+        raise ValueError("password must include at least one symbol")
+    return value
+
+
+def _normalize_email(value: str) -> str:
+    normalized = value.strip().lower()
+    if "@" not in normalized or "." not in normalized:
+        raise ValueError("email must be a valid email address")
+    return normalized
+
+
 class UserRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -109,6 +129,38 @@ class LoginRequest(BaseModel):
         if "@" not in normalized or "." not in normalized:
             raise ValueError("email must be a valid email address")
         return normalized
+
+
+class ForgotPasswordRequest(BaseModel):
+    email: str
+
+    @field_validator("email")
+    @classmethod
+    def _normalize(cls, value: str) -> str:
+        return value.strip().lower()
+
+
+class ResetPasswordRequest(BaseModel):
+    email: str
+    code: str
+    new_password: str
+    confirm_password: str
+
+    @field_validator("email")
+    @classmethod
+    def _normalize(cls, value: str) -> str:
+        return _normalize_email(value)
+
+    @field_validator("new_password")
+    @classmethod
+    def _valid_password(cls, value: str) -> str:
+        return _validate_password_strength(value)
+
+    @model_validator(mode="after")
+    def _confirm_passwords(self) -> "ResetPasswordRequest":
+        if self.new_password != self.confirm_password:
+            raise ValueError("passwords do not match")
+        return self
 
 
 class AvatarUpdateRequest(BaseModel):

@@ -12,6 +12,7 @@ import {
     getToken,
     loginWithEmail,
     registerWithEmail,
+    resetPassword,
     setToken,
     startGoogleLogin,
     verifyEmail,
@@ -31,6 +32,12 @@ interface AuthContextValue {
         fullName: string
     ) => Promise<void>;
     completeEmailVerification: (email: string, code: string) => Promise<void>;
+    completePasswordReset: (
+        email: string,
+        code: string,
+        newPassword: string,
+        confirmPassword: string
+    ) => Promise<void>;
     logout: () => void;
     refreshUser: () => Promise<void>;
 }
@@ -135,6 +142,27 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         await refreshUser();
     };
 
+    const completePasswordReset = async (
+        email: string,
+        code: string,
+        newPassword: string,
+        confirmPassword: string
+    ) => {
+        const normalizedEmail = email.trim().toLowerCase();
+        const trimmedCode = code.trim();
+        if (!trimmedCode) {
+            throw new Error("Please enter the code from your email.");
+        }
+        if (newPassword !== confirmPassword) {
+            throw new Error("Passwords do not match.");
+        }
+
+        const token = await resetPassword(normalizedEmail, trimmedCode, newPassword, confirmPassword);
+        setToken(token);
+        sessionStorage.setItem(LOCAL_EMAIL_KEY, normalizedEmail);
+        await refreshUser();
+    };
+
     const logout = () => {
         clearToken();
         sessionStorage.removeItem(LOCAL_EMAIL_KEY);
@@ -152,6 +180,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
                 signInWithEmail,
                 signUpWithEmail,
                 completeEmailVerification,
+                completePasswordReset,
                 logout,
                 refreshUser,
             }}

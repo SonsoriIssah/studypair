@@ -127,6 +127,16 @@ def accept_request(
     request.status = MatchRequestStatus.ACCEPTED
     request.responded_at = utcnow()
 
+    course = db.get(TutorCourse, request.course_id)
+    slot = db.get(TutorAvailabilitySlot, request.slot_id)
+    when = f"{slot.day_of_week.value} {slot.start_time.strftime('%H:%M')}"
+    db.add(
+        Notification(
+            user_id=request.student_id,
+            message=f'{current_user.full_name} accepted your request for {course.course_name} ({when}).',
+        )
+    )
+
     db.commit()
     db.refresh(request)
     return request
@@ -165,6 +175,18 @@ def reject_request(
     request.responded_at = utcnow()
     if slot is not None:
         release_seat(slot)
+
+    course = db.get(TutorCourse, request.course_id)
+    verb = "removed you from" if bulk else "declined your request for"
+    detail = course.course_name
+    if slot is not None:
+        detail += f" ({slot.day_of_week.value} {slot.start_time.strftime('%H:%M')})"
+    db.add(
+        Notification(
+            user_id=request.student_id,
+            message=f"{current_user.full_name} {verb} {detail}.",
+        )
+    )
 
     db.commit()
     db.refresh(request)

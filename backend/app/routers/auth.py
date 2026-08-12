@@ -28,10 +28,12 @@ from app.models.user import User
 from app.schemas.auth import (
     AvatarUpdateRequest,
     CompleteProfileRequest,
+    ForgotPasswordRequest,
     LoginRequest,
     RegisterRequest,
     RegisterResponse,
     ResendVerificationRequest,
+    ResetPasswordRequest,
     TokenResponse,
     UserRead,
     VerifyEmailRequest,
@@ -43,6 +45,13 @@ from app.services.email_verification import (
     issue_code,
     verification_email_html,
     verify_code,
+)
+from app.services.password_reset import (
+    clear_code as clear_reset_code,
+    is_in_resend_cooldown as is_in_reset_cooldown,
+    issue_code as issue_reset_code,
+    reset_email_html,
+    verify_code as verify_reset_code,
 )
 
 router = APIRouter(prefix="/auth", tags=["auth"])
@@ -183,6 +192,46 @@ def login(payload: LoginRequest, db: Session = Depends(get_db)) -> TokenResponse
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=EMAIL_NOT_VERIFIED_DETAIL)
 
     _clear_failed_logins(normalized_email)
+    return TokenResponse(access_token=create_access_token(user.id), token_type="bearer")
+
+
+@router.post("/forgot-password", status_code=status.HTTP_204_NO_CONTENT)
+def forgot_password(payload: ForgotPasswordRequest, db: Session = Depends(get_db)) -> None:
+    user = db.scalar(select(User).where(User.email == payload.email))
+    # Same response whether or not the account exists, or is a Google-only
+    # account with no password to reset — this endpoint shouldn't let someone
+    # probe which emails are registered.
+    if user is None or user.password_hash is None:
+        return
+    if is_in_reset_cooldown(user):
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="Please wait a moment before requesting another code.",
+        )
+
+    code = issue_reset_code(user)
+    try:
+        send_email(user.email, "Reset your StudyPair password", reset_email_html(code))
+    except Exception:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="Could not send the reset email. Please try again shortly.",
+        )
+    db.commit()
+
+
+@router.post("/reset-password", response_model=TokenResponse)
+def reset_password(payload: ResetPasswordRequest, db: Session = Depends(get_db)) -> TokenResponse:
+    user = db.scalar(select(User).where(User.email == payload.email))
+    if user is None or not verify_reset_code(user, payload.code):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid or expired code")
+
+    user.password_hash = hash_password(payload.new_password)
+    clear_reset_code(user)
+    _clear_failed_logins(user.email)
+    db.commit()
+
     return TokenResponse(access_token=create_access_token(user.id), token_type="bearer")
 
 

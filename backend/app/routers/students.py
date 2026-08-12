@@ -234,6 +234,15 @@ def create_match_request(
     )
     db.add(request)
 
+    when = f"{slot.day_of_week.value} {slot.start_time.strftime('%H:%M')}"
+    verb = "joined your group session for" if bulk else "requested"
+    db.add(
+        Notification(
+            user_id=course.tutor_id,
+            message=f'{current_user.full_name} {verb} {course.course_name} ({when}).',
+        )
+    )
+
     db.commit()
     db.refresh(request)
     return request

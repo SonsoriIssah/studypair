@@ -116,6 +116,28 @@ export const resendVerificationCode = (email: string) =>
         method: "POST",
         body: JSON.stringify({ email }),
     });
+export const forgotPassword = (email: string) =>
+    request<void>("/auth/forgot-password", {
+        method: "POST",
+        body: JSON.stringify({ email }),
+    });
+export const resetPassword = async (
+    email: string,
+    code: string,
+    newPassword: string,
+    confirmPassword: string
+) => {
+    const response = await request<{ access_token: string }>("/auth/reset-password", {
+        method: "POST",
+        body: JSON.stringify({
+            email,
+            code,
+            new_password: newPassword,
+            confirm_password: confirmPassword,
+        }),
+    });
+    return response.access_token;
+};
 export const uploadAvatar = (dataUrl: string) =>
     request<User>("/auth/me/avatar", {
         method: "POST",
@@ -236,5 +258,10 @@ export const rejectRequest = (requestId: string) =>
 export const adminListUsers = () => request<User[]>("/admin/users");
 export const adminListCourseApplications = (status: string = "open") =>
     request<CourseApplication[]>(`/admin/course-applications?status=${status}`);
+export const adminSetUserAdmin = (userId: string, isAdmin: boolean) =>
+    request<User>(`/admin/users/${userId}`, {
+        method: "PATCH",
+        body: JSON.stringify({ is_admin: isAdmin }),
+    });
 
 export type { Course };
