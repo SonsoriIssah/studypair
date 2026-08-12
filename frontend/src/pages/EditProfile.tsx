@@ -162,8 +162,7 @@ export default function EditProfile() {
                             required: "Phone number is required.",
                             validate: (value) => {
                                 const digits = value.replace(/\D/g, "");
-                                if (digits.length < 9) return "Phone number is too short.";
-                                if (digits.length > 10) return "Phone number must be at most 10 digits.";
+                                if (digits.length !== 10) return "Phone number must be 10 digits.";
                                 return true;
                             },
                         })}
@@ -202,7 +201,14 @@ export default function EditProfile() {
                     <input
                         id="studentId"
                         type="text"
-                        {...register("universityId", { required: "Please enter your student ID." })}
+                        {...register("universityId", {
+                            required: "Please enter your student ID.",
+                            validate: (value) => {
+                                if (value.trim().length !== 8) return "Student ID must be 8 characters.";
+                                return true;
+                            },
+                        })}
+                        maxLength={8}
                         placeholder="e.g. your university ID number"
                         className="h-12 w-full rounded-xl border border-outline-variant bg-surface-container-lowest px-4 font-body-md text-body-md text-on-surface outline-none transition-colors placeholder:text-outline-variant focus:border-primary focus:ring-1 focus:ring-primary"
                     />

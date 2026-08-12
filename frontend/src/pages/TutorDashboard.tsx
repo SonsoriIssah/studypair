@@ -659,6 +659,9 @@ export default function TutorDashboard() {
                   />
                 </div>
               </div>
+              {start >= end && (
+                <p className="-mt-2 text-body-sm font-body-sm text-error">End time must be after start time.</p>
+              )}
 
               <div>
                 <label className="mb-2 block text-label-md font-label-md text-on-surface-variant">Max Students</label>
@@ -717,9 +720,6 @@ export default function TutorDashboard() {
                   {savingSlot ? 'Saving…' : editingSlotId ? 'Save Changes' : 'Save Slot'}
                 </button>
               </div>
-              {start >= end && (
-                <p className="text-body-sm font-body-sm text-error">Start time must be before end time.</p>
-              )}
             </form>
           </div>
         </div>

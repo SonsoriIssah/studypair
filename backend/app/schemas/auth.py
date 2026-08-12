@@ -196,16 +196,16 @@ class CompleteProfileRequest(BaseModel):
     @classmethod
     def _valid_phone(cls, value: str) -> str:
         digits = re.sub(r"\D", "", value)
-        if not (9 <= len(digits) <= 10):
-            raise ValueError("phone_number must be 9-10 digits")
+        if len(digits) != 10:
+            raise ValueError("phone_number must be 10 digits")
         return value.strip()
 
     @field_validator("university_id")
     @classmethod
-    def _non_empty_university_id(cls, value: str) -> str:
+    def _valid_university_id(cls, value: str) -> str:
         cleaned = value.strip()
-        if not cleaned:
-            raise ValueError("university_id is required")
+        if len(cleaned) != 8:
+            raise ValueError("university_id must be 8 characters")
         return cleaned
 
     @field_validator("full_name")

@@ -41,8 +41,9 @@ export default function CompleteProfile() {
         handleSubmit,
         setValue,
         watch,
-        formState: { errors },
+        formState: { errors, isValid },
     } = useForm<CompleteProfileFormValues>({
+        mode: "onChange",
         defaultValues: {
             fullName: user?.full_name ?? "",
             phone: "",
@@ -51,9 +52,6 @@ export default function CompleteProfile() {
         },
     });
     const selectedLevel = watch("level");
-    const phoneValue = watch("phone");
-    const fullNameValue = watch("fullName");
-    const universityIdValue = watch("universityId");
 
     const onSubmit = async (values: CompleteProfileFormValues) => {
         if (!values.level) {
@@ -80,13 +78,10 @@ export default function CompleteProfile() {
         }
     };
 
-    const canContinue =
-        !!fullNameValue?.trim() &&
-        !!phoneValue &&
-        phoneValue.replace(/\D/g, "").length >= 9 &&
-        phoneValue.replace(/\D/g, "").length <= 10 &&
-        !!selectedLevel &&
-        !!universityIdValue?.trim();
+    // Level is set via the button group below, not a registered input, so
+    // it isn't part of react-hook-form's own validity — checked alongside
+    // isValid rather than folded into it.
+    const canContinue = !!selectedLevel && isValid;
 
     return (
         <div className="min-h-screen overflow-hidden bg-surface text-on-surface antialiased">
@@ -213,8 +208,7 @@ export default function CompleteProfile() {
                                     required: "Phone number is required.",
                                     validate: (value) => {
                                         const digits = value.replace(/\D/g, "");
-                                        if (digits.length < 9) return "Phone number is too short.";
-                                        if (digits.length > 10) return "Phone number must be at most 10 digits.";
+                                        if (digits.length !== 10) return "Phone number must be 10 digits.";
                                         return true;
                                     },
                                 })}
@@ -266,7 +260,12 @@ export default function CompleteProfile() {
                                 type="text"
                                 {...register("universityId", {
                                     required: "Please enter your student ID.",
+                                    validate: (value) => {
+                                        if (value.trim().length !== 8) return "Student ID must be 8 characters.";
+                                        return true;
+                                    },
                                 })}
+                                maxLength={8}
                                 placeholder="e.g. your university ID number"
                                 className="mt-1 h-12 w-full rounded-xl border border-outline-variant bg-surface-container-lowest px-4 font-body-md text-body-md text-on-surface outline-none transition-colors placeholder:text-outline-variant focus:border-primary focus:ring-1 focus:ring-primary"
                             />
