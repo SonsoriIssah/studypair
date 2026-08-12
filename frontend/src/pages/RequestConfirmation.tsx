@@ -68,7 +68,7 @@ export default function RequestConfirmation() {
           </div>
 
           <Link
-            to={accepted ? '/requests' : '/'}
+            to={accepted ? '/requests' : '/dashboard'}
             className="w-full rounded-lg bg-primary py-3 text-label-md font-label-md text-on-primary transition-opacity hover:opacity-90"
           >
             {accepted ? 'View My Requests' : 'Done'}
